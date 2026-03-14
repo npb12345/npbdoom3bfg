@@ -1,4 +1,6 @@
 build*
+build/
+.vs/
 eclipse*
 xcode*
 neo/ipch
@@ -11,6 +13,14 @@ neo/ipch
 *.pk4
 *.resources
 *.crc
+*.obj
+*.pdb
+*.exe
+*.dll
+*.lib
+*.log
+*.cache
+*.ipch
 .DS_Store
 imgui.ini
 
@@ -44,3 +54,5 @@ neo/.vscode/
 neo/cmake-build-*/
 neo/bin/
 /tools/
+
+
