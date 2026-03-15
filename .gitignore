@@ -41,6 +41,7 @@ base/env/
 base/screenshots/
 base/_tb/*.obj
 base/_tb/*.mtl
+base/textures
 
 GPATH
 GRTAGS
