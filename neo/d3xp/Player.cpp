@@ -9632,6 +9632,8 @@ void idPlayer::Think()
 		session->SetVoiceGroupsToTeams();
 	}
 
+	// Idle weapon lowering is temporarily disabled. Remove this block comment to restore it.
+	/*
 	if (weapon.GetEntity() != NULL && !GuiActive())
 	{
 		const bool weaponActivity =
@@ -9659,6 +9661,7 @@ void idPlayer::Think()
 			weaponIdleLowered = true;
 		}
 	}
+	*/
 
 	
 
