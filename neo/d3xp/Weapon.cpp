@@ -2015,6 +2015,11 @@ bool idWeapon::IsReady() const
 	return !hide && !IsHidden() && ( ( status == WP_RELOAD ) || ( status == WP_READY ) || ( status == WP_OUTOFAMMO ) );
 }
 
+bool idWeapon::IsFullyRaised() const
+{
+	return IsReady() && gameLocal.time - hideStartTime >= hideTime;
+}
+
 /*
 ================
 idWeapon::IsReloading

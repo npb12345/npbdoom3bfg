@@ -137,6 +137,7 @@ public:
 	void					BeginAttack();
 	void					EndAttack();
 	bool					IsReady() const;
+	bool					IsFullyRaised() const;
 	bool					IsReloading() const;
 	bool					IsHolstered() const;
 	bool					ShowCrosshair() const;

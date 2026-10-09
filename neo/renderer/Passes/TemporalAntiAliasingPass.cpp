@@ -199,7 +199,13 @@ void TemporalAntiAliasingPass::TemporalResolve(
 								   viewDef->viewport.zmin,
 								   viewDef->viewport.zmax };
 
-	const nvrhi::Viewport viewportOutput = viewportInput;
+	nvrhi::Viewport viewportOutput = viewportInput;
+	if( R_DLSSRequested() && !viewDef->isSubview && !viewDef->targetRender )
+	{
+		// TAAU fallback also covers the frame where DLSS evaluation fails.
+		viewportOutput = nvrhi::Viewport( 0.f, float( renderSystem->GetWidth() - 1 ),
+			0.f, float( renderSystem->GetHeight() - 1 ), 0.f, 1.f );
+	}
 
 	TemporalAntiAliasingConstants taaConstants = {};
 	const float marginSize = 1.f;

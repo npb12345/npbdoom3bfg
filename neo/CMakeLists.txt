@@ -1454,6 +1454,26 @@ if(USE_DX12)
 	target_link_libraries(${APP_NAME} nvrhi_d3d12)
 endif()
 
+# Optional native DLSS. The SDK is external; no binary download happens at configure time.
+set(STREAMLINE_SDK_DIR "" CACHE PATH "Path to the official NVIDIA Streamline 2.14.1 SDK")
+option(USE_STREAMLINE "Enable native DLSS on Windows DX12 (requires STREAMLINE_SDK_DIR)" OFF)
+if(USE_STREAMLINE)
+    if(NOT WIN32 OR NOT USE_DX12)
+        message(FATAL_ERROR "USE_STREAMLINE requires Windows and USE_DX12")
+    endif()
+    if(NOT EXISTS "${STREAMLINE_SDK_DIR}/include/sl.h")
+        message(FATAL_ERROR "Set STREAMLINE_SDK_DIR to the extracted NVIDIA Streamline SDK")
+    endif()
+    target_include_directories(${APP_NAME} PRIVATE "${STREAMLINE_SDK_DIR}/include")
+    target_compile_definitions(${APP_NAME} PRIVATE USE_STREAMLINE=1)
+    # Runtime loading preserves startup without the optional DLLs. Deploy signed release files only.
+    foreach(DLSS_DLL sl.interposer.dll sl.common.dll sl.dlss.dll nvngx_dlss.dll)
+        add_custom_command(TARGET ${APP_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${STREAMLINE_SDK_DIR}/bin/x64/${DLSS_DLL}" "$<TARGET_FILE_DIR:${APP_NAME}>/${DLSS_DLL}")
+    endforeach()
+endif()
+
 if(USE_DXIL_ON_DX12)
 	target_compile_definitions(${APP_NAME} PRIVATE USE_DXIL_ON_DX12=1)
 endif()

@@ -1061,12 +1061,19 @@ void idRenderWorldLocal::RenderScene( const renderView_t* renderView )
 		tr.PerformResolutionScaling( windowWidth, windowHeight );
 
 		// screenFraction is just for quickly testing fill rate limitations
-		if( r_screenFraction.GetInteger() != 100 )
+		if( !R_DLSSRequested() && r_screenFraction.GetInteger() != 100 )
 		{
 			windowWidth = ( windowWidth * r_screenFraction.GetInteger() ) / 100;
 			windowHeight = ( windowHeight * r_screenFraction.GetInteger() ) / 100;
 		}
-		tr.CropRenderSize( windowWidth, windowHeight );
+		if( R_DLSSRequested() )
+		{
+			tr.CropRenderSize( 0, 0, windowWidth, windowHeight, true );
+		}
+		else
+		{
+			tr.CropRenderSize( windowWidth, windowHeight );
+		}
 		tr.GetCroppedViewport( &parms->viewport );
 	}
 

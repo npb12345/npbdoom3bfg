@@ -29,6 +29,7 @@ If you have questions concerning this license or the applicable additional terms
 #include "precompiled.h"
 #pragma hdrstop
 #include "../Game_local.h"
+#include "renderer/Passes/DlssPass.h"
 
 const static int NUM_SYSTEM_OPTIONS_OPTIONS = 8;
 
@@ -592,22 +593,27 @@ void idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings::AdjustFi
 		case SYSTEM_FIELD_ANTIALIASING:
 		{
 #if ID_MSAA
-			static const int numValues = 5;
-			static const int values[numValues] =
-			{
-				ANTI_ALIASING_NONE,
-				ANTI_ALIASING_TAA,
-				ANTI_ALIASING_TAA_SMAA_1X,
-				ANTI_ALIASING_MSAA_2X,
-				ANTI_ALIASING_MSAA_4X,
-			};
-#else
-			static const int numValues = 3;
+			static const int numValues = 10;
 			static const int values[numValues] =
 			{
 				ANTI_ALIASING_NONE,
 				ANTI_ALIASING_SMAA_1X,
 				ANTI_ALIASING_TAA,
+				ANTI_ALIASING_TAA_SMAA_1X,
+				ANTI_ALIASING_MSAA_2X,
+				ANTI_ALIASING_MSAA_4X,
+				ANTI_ALIASING_DLAA, ANTI_ALIASING_DLSS_QUALITY,
+				ANTI_ALIASING_DLSS_BALANCED, ANTI_ALIASING_DLSS_PERFORMANCE,
+			};
+#else
+			static const int numValues = 7;
+			static const int values[numValues] =
+			{
+				ANTI_ALIASING_NONE,
+				ANTI_ALIASING_SMAA_1X,
+				ANTI_ALIASING_TAA,
+				ANTI_ALIASING_DLAA, ANTI_ALIASING_DLSS_QUALITY,
+				ANTI_ALIASING_DLSS_BALANCED, ANTI_ALIASING_DLSS_PERFORMANCE,
 			};
 #endif
 
@@ -772,30 +778,38 @@ idSWFScriptVar idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings
 			}
 
 #if ID_MSAA
-			static const int numValues = 5;
-			static const char* values[numValues] =
-			{
-				"None",
-				"TAA",
-				"TAA + SMAA 1X",
-				"MSAA 2X",
-				"MSAA 4X",
-			};
-
-			compile_time_assert( numValues == ( ANTI_ALIASING_MSAA_4X + 1 ) );
-#else
-			static const int numValues = 3;
+			static const int numValues = 10;
 			static const char* values[numValues] =
 			{
 				"None",
 				"SMAA",
-				"TAA"
+				"TAA",
+				"TAA + SMAA 1X",
+				"MSAA 2X",
+				"MSAA 4X",
+				"DLAA", "DLSS Quality", "DLSS Balanced", "DLSS Performance",
 			};
 
-			compile_time_assert( numValues == ( ANTI_ALIASING_TAA + 1 ) );
+			compile_time_assert( numValues == ( ANTI_ALIASING_DLSS_PERFORMANCE + 1 ) );
+#else
+			static const int numValues = 7;
+			static const char* values[numValues] =
+			{
+				"None",
+				"SMAA",
+				"TAA",
+				"DLAA", "DLSS Quality", "DLSS Balanced", "DLSS Performance",
+			};
+
+			compile_time_assert( numValues == ( ANTI_ALIASING_DLSS_PERFORMANCE + 1 ) );
 #endif
 
-			return values[ r_antiAliasing.GetInteger() ];
+			const int aa = idMath::ClampInt( 0, numValues - 1, r_antiAliasing.GetInteger() );
+			if( aa >= ANTI_ALIASING_DLAA && !R_DLSSAvailable() )
+			{
+				return va( "%s (TAA fallback)", values[aa] );
+			}
+			return values[aa];
 		}
 		case SYSTEM_FIELD_RENDERMODE:
 		{

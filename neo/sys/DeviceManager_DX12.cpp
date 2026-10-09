@@ -26,6 +26,7 @@
 #include "precompiled.h"
 
 #include "renderer/RenderCommon.h"
+#include "renderer/Passes/DlssPass.h"
 #include "renderer/RenderSystem.h"
 #include "framework/Common_local.h"
 #include <sys/DeviceManager.h>
@@ -232,6 +233,7 @@ std::wstring StrToWS( const idStr& str )
 
 bool DeviceManager_DX12::CreateDeviceAndSwapChain()
 {
+	R_DLSSInit();
 	RefCountPtr<IDXGIAdapter> targetAdapter;
 
 	if( m_DeviceParams.adapter )
@@ -427,8 +429,13 @@ bool DeviceManager_DX12::CreateDeviceAndSwapChain()
 	m_FullScreenDesc.Windowed = !m_DeviceParams.startFullscreen;
 
 	RefCountPtr<IDXGISwapChain1> pSwapChain1;
+	R_DLSSSetDevice( m_Device12 );
 	hr = pDxgiFactory->CreateSwapChainForHwnd( m_GraphicsQueue, ( HWND )windowHandle, &m_SwapChainDesc, &m_FullScreenDesc, nullptr, &pSwapChain1 );
 	HR_RETURN( hr );
+	// Let Streamline observe Present for per-frame cleanup without replacing DXGI.
+	IDXGISwapChain1* dlssSwapChain = pSwapChain1.Detach();
+	R_DLSSUpgradeSwapChain( reinterpret_cast<void**>( &dlssSwapChain ) );
+	pSwapChain1.Attach( dlssSwapChain );
 
 	hr = pSwapChain1->QueryInterface( IID_PPV_ARGS( &m_SwapChain ) );
 	HR_RETURN( hr );
@@ -478,6 +485,7 @@ bool DeviceManager_DX12::CreateDeviceAndSwapChain()
 
 void DeviceManager_DX12::DestroyDeviceAndSwapChain()
 {
+	if( m_NvrhiDevice ) m_NvrhiDevice->waitForIdle();
 	OPTICK_SHUTDOWN();
 
 	m_RhiSwapChainBuffers.clear();
@@ -506,6 +514,7 @@ void DeviceManager_DX12::DestroyDeviceAndSwapChain()
 	m_GraphicsQueue = nullptr;
 	m_ComputeQueue = nullptr;
 	m_CopyQueue = nullptr;
+	R_DLSSShutdown();
 	m_Device12 = nullptr;
 	m_DxgiAdapter = nullptr;
 }

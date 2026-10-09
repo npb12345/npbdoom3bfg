@@ -373,6 +373,8 @@ public:
 
 	int weaponIdleTime;
 	bool weaponIdleLowered;
+	int reloadHoldStart = -1;
+	bool reloadHoldConsumed = false;
 
 	int						heartRate;
 	idInterpolate<float>	heartInfo;

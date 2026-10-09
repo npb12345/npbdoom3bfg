@@ -53,6 +53,25 @@ struct PS_OUT
 
 void main( PS_IN fragment, out PS_OUT result )
 {
+#if VECTORS_ONLY
+	if( pc.rpOverbright.z > 0.5 )
+	{
+		// DLSS uses a cropped render viewport inside native-sized textures.
+		// Fetch actual pixels, not UVs spanning the unused part of the texture.
+		result.color = 0;
+		int2 pixel = int2( fragment.position.xy );
+		if( t_ViewColor.Load( int3( pixel, 0 ) ).a == 0.0 ) return;
+		float2 currentUV = ( fragment.position.xy - pc.rpOverbright.xy ) * pc.rpWindowCoord.xy;
+		float4 clip = float4( currentUV.x * 2.0 - 1.0, 1.0 - currentUV.y * 2.0,
+			t_ViewDepth.Load( int3( pixel, 0 ) ).x, 1.0 );
+		float4 previous = float4( dot( pc.rpMVPmatrixX, clip ), dot( pc.rpMVPmatrixY, clip ),
+			dot( pc.rpMVPmatrixZ, clip ), dot( pc.rpMVPmatrixW, clip ) );
+		if( previous.w <= 0.0 ) return;
+		float2 previousUV = previous.xy / previous.w * float2( 0.5, -0.5 ) + 0.5;
+		result.color = float4( ( previousUV - currentUV ) * pc.rpWindowCoord.zw, 0, 1 );
+		return;
+	}
+#endif
 #if 0
 	if( fragment.texcoord0.x < 0.5 )
 	{

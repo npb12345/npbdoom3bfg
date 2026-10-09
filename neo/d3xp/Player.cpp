@@ -1757,6 +1757,8 @@ idPlayer::Init
 */
 void idPlayer::Init()
 {
+	reloadHoldStart = -1;
+	reloadHoldConsumed = false;
 	const char*			value;
 	const idKeyValue*	kv;
 
@@ -2648,6 +2650,10 @@ idPlayer::Restore
 */
 void idPlayer::Restore( idRestoreGame* savefile )
 {
+	// Hold gestures are transient and must not survive loading a save.
+	reloadHoldStart = -1;
+	reloadHoldConsumed = false;
+	weaponIdleLowered = false;
 	int	  i;
 	int	  num;
 	float set;
@@ -3926,7 +3932,7 @@ void idPlayer::FireWeapon()
 		}
 	}
 
-	if( !hiddenWeapon && weapon.GetEntity()->IsReady() )
+	if( !hiddenWeapon && !weaponIdleLowered && weapon.GetEntity()->IsFullyRaised() )
 	{
 		if( g_infiniteAmmo.GetBool() || weapon.GetEntity()->AmmoInClip() || weapon.GetEntity()->AmmoAvailable() )
 		{
@@ -5153,6 +5159,12 @@ void idPlayer::Reload()
 
 	if( weapon.GetEntity() && weapon.GetEntity()->IsLinked() )
 	{
+		if( weaponIdleLowered )
+		{
+			weaponIdleLowered = false;
+			weapon.GetEntity()->RaiseWeapon();
+			return;
+		}
 		weapon.GetEntity()->Reload();
 	}
 }
@@ -5733,21 +5745,42 @@ void idPlayer::Weapon_Combat()
 		return;
 	}
 
-	const bool wakingFromIdle =
-		weaponIdleLowered &&
-		((usercmd.buttons & BUTTON_ATTACK) || (usercmd.buttons & BUTTON_ZOOM));
-
-	if (wakingFromIdle)
+	// A tap reloads on release; a hold lowers once until the button is released.
+	const bool reloadHeld = ( usercmd.buttons & BUTTON_RELOAD ) != 0;
+	if( reloadHeld )
 	{
-		weaponIdleTime = gameLocal.time;
-		weaponIdleLowered = false;
-
-		if (weapon.GetEntity() != NULL)
+		if( reloadHoldStart < 0 )
 		{
-			weapon.GetEntity()->Raise();
+			reloadHoldStart = gameLocal.time;
+			reloadHoldConsumed = weaponIdleLowered;
+			if( weaponIdleLowered )
+			{
+				Reload(); // Raising consumes this press, including a continued hold.
+			}
 		}
+		if( !reloadHoldConsumed && gameLocal.time - reloadHoldStart >= 500 )
+		{
+			reloadHoldConsumed = true;
+			weaponIdleLowered = true;
+			AI_ATTACK_HELD = false;
+			weapon.GetEntity()->EndAttack();
+			weapon.GetEntity()->LowerWeapon();
+		}
+	}
+	else if( reloadHoldStart >= 0 )
+	{
+		if( !reloadHoldConsumed )
+		{
+			Reload();
+		}
+		reloadHoldStart = -1;
+		reloadHoldConsumed = false;
+	}
 
-		return;
+	if( weaponIdleLowered && ( usercmd.buttons & BUTTON_ATTACK ) )
+	{
+		weaponIdleLowered = false;
+		weapon.GetEntity()->RaiseWeapon();
 	}
 
 	if (!weaponIdleLowered)
@@ -6028,6 +6061,15 @@ idPlayer::UpdateWeapon
 */
 void idPlayer::UpdateWeapon()
 {
+	if( health <= 0 || influenceActive || !weaponEnabled || gameLocal.inCinematic ||
+		privateCameraView || hiddenWeapon || ActiveGui() ||
+		( focusCharacter && focusCharacter->health > 0 ) || g_dragEntity.GetBool() ||
+		idealWeapon != currentWeapon )
+	{
+		// Consume a held reload across interruptions, so it cannot trigger on return.
+		reloadHoldStart = ( usercmd.buttons & BUTTON_RELOAD ) ? gameLocal.time : -1;
+		reloadHoldConsumed = true;
+	}
 	if( health <= 0 )
 	{
 		return;
@@ -7891,7 +7933,11 @@ void idPlayer::PerformImpulse( int impulse )
 	{
 		case IMPULSE_13:
 		{
-			Reload();
+			// Held bindings are handled in Weapon_Combat; retain console impulses.
+			if( !( usercmd.buttons & BUTTON_RELOAD ) && reloadHoldStart < 0 )
+			{
+				Reload();
+			}
 			break;
 		}
 		case IMPULSE_14:

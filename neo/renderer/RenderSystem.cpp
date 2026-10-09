@@ -815,6 +815,7 @@ In split screen mode the rendering size is also smaller.
 */
 void idRenderSystemLocal::PerformResolutionScaling( int& newWidth, int& newHeight )
 {
+	if( R_DLSSRenderSize( GetWidth(), GetHeight(), newWidth, newHeight ) ) return;
 	float xScale = 1.0f;
 	float yScale = 1.0f;
 	resolutionScale.GetCurrentResolutionScale( xScale, yScale );

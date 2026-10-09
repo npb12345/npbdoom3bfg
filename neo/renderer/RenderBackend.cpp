@@ -35,6 +35,7 @@ If you have questions concerning this license or the applicable additional terms
 
 #include "framework/Common_local.h"
 #include "RenderCommon.h"
+#include "Passes/DlssPass.h"
 #include "Framebuffer.h"
 
 #include "imgui/ImGui_Hooks.h"
@@ -4959,6 +4960,9 @@ void idRenderBackend::DrawMotionVectors()
 	windowCoordParm[2] = w;
 	windowCoordParm[3] = h;
 	SetFragmentParm( RENDERPARM_WINDOWCOORD, windowCoordParm ); // rpWindowCoord
+	const idVec2 dlssJitter = GetCurrentPixelOffset( viewDef->taaFrameCount );
+	const float dlssMotionParms[4] = { dlssJitter.x, -dlssJitter.y, R_DLSSRequested() ? 1.0f : 0.0f, 0.0f };
+	SetFragmentParm( RENDERPARM_OVERBRIGHT, dlssMotionParms );
 
 	if( r_taaMotionVectors.GetBool() && prevViewsValid && cameraMoved )
 	{
@@ -5024,7 +5028,15 @@ void idRenderBackend::TemporalAAPass( const viewDef_t* _viewDef )
 		r_taaMaxRadiance.GetFloat(),
 		r_taaEnableHistoryClamping.GetBool()
 	};
-	taaPass->TemporalResolve( commandList, params, prevViewsValid, _viewDef );
+	const bool dlssResolved = !_viewDef->targetRender && R_DLSSEvaluate( commandList, _viewDef,
+		globalImages->currentRenderHDRImage->GetTextureHandle(), globalImages->currentDepthImage->GetTextureHandle(),
+		globalImages->taaMotionVectorsImage->GetTextureHandle(), globalImages->taaResolvedImage->GetTextureHandle(),
+		GetCurrentPixelOffset( _viewDef->taaFrameCount ), prevViewsValid );
+	if( !dlssResolved )
+	{
+		taaPass->TemporalResolve( commandList, params, prevViewsValid && !dlssHistoryActive, _viewDef );
+	}
+	dlssHistoryActive = dlssResolved;
 	prevViewsValid = true;
 
 	renderLog.CloseBlock();
@@ -5913,6 +5925,16 @@ void idRenderBackend::DrawViewInternal( const viewDef_t* _viewDef, const int ste
 			blitParms.sourceTexture = currentFB->getDesc().colorAttachments[0].texture;
 			blitParms.targetFramebuffer = globalFramebuffers.postProcFBO->GetApiObject(); // _currentRender image
 			blitParms.targetViewport = nvrhi::Viewport( renderSystem->GetWidth(), renderSystem->GetHeight() );
+			if( R_DLSSRequested() && !viewDef->isSubview )
+			{
+				// Heat haze samples _currentRender with viewport-normalized UVs.
+				// Expand the active DLSS input rectangle to fill that scene copy;
+				// copying the entire native-sized target also copies unused pixels.
+				const auto& sourceDesc = blitParms.sourceTexture->getDesc();
+				blitParms.sourceBox = idVec4( float( x ) / sourceDesc.width,
+					float( y ) / sourceDesc.height, float( w ) / sourceDesc.width,
+					float( h ) / sourceDesc.height );
+			}
 			commonPasses.BlitTexture( commandList, blitParms, &bindingCache );
 		}
 
@@ -5974,9 +5996,16 @@ void idRenderBackend::DrawViewInternal( const viewDef_t* _viewDef, const int ste
 		renderLog.OpenBlock( "Render_ToneMapPass", colorBlue );
 
 		ToneMappingParameters parms;
+		viewDef_t outputView = *viewDef;
+		if( R_DLSSRequested() && !viewDef->isSubview )
+		{
+			outputView.viewport.x1 = outputView.viewport.y1 = 0;
+			outputView.viewport.x2 = renderSystem->GetWidth() - 1;
+			outputView.viewport.y2 = renderSystem->GetHeight() - 1;
+		}
 		if( R_UseTemporalAA() )
 		{
-			toneMapPass->SimpleRender( commandList, parms, viewDef, globalImages->taaResolvedImage->GetTextureHandle(), globalFramebuffers.ldrFBO->GetApiObject() );
+			toneMapPass->SimpleRender( commandList, parms, &outputView, globalImages->taaResolvedImage->GetTextureHandle(), globalFramebuffers.ldrFBO->GetApiObject() );
 		}
 		else
 		{

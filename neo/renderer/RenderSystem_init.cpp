@@ -80,9 +80,9 @@ idCVar r_useValidationLayers( "r_useValidationLayers", "1", CVAR_INTEGER | CVAR_
 
 // RB: disabled 16x MSAA
 #if ID_MSAA
-	idCVar r_antiAliasing( "r_antiAliasing", "1", CVAR_RENDERER | CVAR_ARCHIVE | CVAR_INTEGER | CVAR_NEW, " 0 = None\n 1 = TAA 1x\n 2 = TAA + SMAA 1x\n 3 = MSAA 2x\n 4 = MSAA 4x\n", 0, ANTI_ALIASING_MSAA_4X );
+	idCVar r_antiAliasing( "r_antiAliasing", "1", CVAR_RENDERER | CVAR_ARCHIVE | CVAR_INTEGER | CVAR_NEW, "0=None, 1=SMAA, 2=TAA, 3=TAA+SMAA, 4=MSAA 2x, 5=MSAA 4x, 6=DLAA, 7=DLSS Quality, 8=DLSS Balanced, 9=DLSS Performance", 0, ANTI_ALIASING_DLSS_PERFORMANCE );
 #else
-	idCVar r_antiAliasing( "r_antiAliasing", "2", CVAR_RENDERER | CVAR_ARCHIVE | CVAR_INTEGER | CVAR_NEW, " 0 = None\n 1 = SMAA 1x\n 2 = TAA", 0, ANTI_ALIASING_TAA );
+	idCVar r_antiAliasing( "r_antiAliasing", "2", CVAR_RENDERER | CVAR_ARCHIVE | CVAR_INTEGER | CVAR_NEW, "0=None, 1=SMAA, 2=TAA, 3=DLAA, 4=DLSS Quality, 5=DLSS Balanced, 6=DLSS Performance (DX12; TAA fallback)", 0, ANTI_ALIASING_DLSS_PERFORMANCE );
 #endif
 // RB end
 idCVar r_vidMode( "r_vidMode", "0", CVAR_ARCHIVE | CVAR_RENDERER | CVAR_INTEGER, "fullscreen video mode number" );
@@ -335,6 +335,10 @@ bool R_UsePixelatedLook()
 
 bool R_UseTemporalAA()
 {
+	// DLSS always needs projection jitter. Unsupported systems retain TAA.
+	if( r_renderMode.GetInteger() == RENDERMODE_DOOM &&
+		r_antiAliasing.GetInteger() >= ANTI_ALIASING_DLAA &&
+		r_antiAliasing.GetInteger() <= ANTI_ALIASING_DLSS_PERFORMANCE ) return true;
 	if( !r_useTemporalAA.GetBool() )
 	{
 		return false;

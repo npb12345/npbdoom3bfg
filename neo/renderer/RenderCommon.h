@@ -1326,6 +1326,10 @@ INITIALIZATION
 bool R_UsePixelatedLook();
 
 bool R_UseTemporalAA();
+bool R_DLSSRequested();
+bool R_DLSSAvailable();
+const char* R_DLSSStatus();
+bool R_DLSSRenderSize( int outputWidth, int outputHeight, int& width, int& height );
 
 bool R_UseHiZ();
 

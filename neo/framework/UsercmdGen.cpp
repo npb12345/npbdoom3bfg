@@ -1061,6 +1061,10 @@ idUsercmdGenLocal::CmdButtons
 void idUsercmdGenLocal::CmdButtons()
 {
 	cmd.buttons = 0;
+	if( ButtonState( UB_IMPULSE13 ) )
+	{
+		cmd.buttons |= BUTTON_RELOAD;
+	}
 
 	// check the attack button
 	if( ButtonState( UB_ATTACK ) )

@@ -347,6 +347,7 @@ private:
 	bool				currentRenderCopied;	// true if any material has already referenced _currentRender
 
 	idRenderMatrix		prevMVP[2];				// world MVP from previous frame for motion blur
+	bool dlssHistoryActive = false;
 	bool				prevViewsValid;
 
 	// RB begin

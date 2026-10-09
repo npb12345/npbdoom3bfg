@@ -47,7 +47,8 @@ const int BUTTON_SCORES			= BIT( 3 );
 const int BUTTON_USE			= BIT( 4 );
 const int BUTTON_JUMP			= BIT( 5 );
 const int BUTTON_CROUCH			= BIT( 6 );
-const int BUTTON_CHATTING		= BIT( 7 );
+// Bit 7 previously belonged to the unused chatting button.
+const int BUTTON_RELOAD			= BIT( 7 );
 
 // usercmd_t->impulse commands
 const int IMPULSE_0				= 0;			// weap 0
