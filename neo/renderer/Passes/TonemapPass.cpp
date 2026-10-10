@@ -307,6 +307,7 @@ void TonemapPass::Render(
 		bool enableColorLUT = params.enableColorLUT && colorLutSize > 0;
 
 		ToneMappingConstants toneMappingConstants = {};
+		toneMappingConstants.hdrPeakRatio = deviceManager->IsHDROutputActive() && r_renderMode.GetInteger() == RENDERMODE_DOOM ? deviceManager->GetHDRPeakNits() / deviceManager->GetHDRPaperWhiteNits() : 0.f;
 		toneMappingConstants.exposureScale = ::exp2f( r_exposure.GetFloat() );
 		toneMappingConstants.whitePointInvSquared = 1.f / powf( params.whitePoint, 2.f );
 		toneMappingConstants.minAdaptedLuminance = r_hdrMinLuminance.GetFloat();

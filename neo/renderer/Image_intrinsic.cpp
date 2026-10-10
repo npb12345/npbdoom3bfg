@@ -34,6 +34,8 @@ If you have questions concerning this license or the applicable additional terms
 #include "imgui.h"
 
 #include "RenderCommon.h"
+#include "sys/DeviceManager.h"
+extern DeviceManager* deviceManager;
 #include "SMAA/AreaTex.h"
 #include "SMAA/SearchTex.h"
 #include "Image_brdfLut.h"
@@ -257,7 +259,8 @@ static void R_RGBA8LinearImage( idImage* image, nvrhi::ICommandList* commandList
 
 static void R_LdrNativeImage( idImage* image, nvrhi::ICommandList* commandList )
 {
-	image->GenerateImage( NULL, renderSystem->GetWidth(), renderSystem->GetHeight(), TF_NEAREST, TR_CLAMP, TD_LOOKUP_TABLE_RGBA, nullptr, true, false, 1 );
+	// Preserve extended display values between tonemapping and HDR output.
+	image->GenerateImage( NULL, renderSystem->GetWidth(), renderSystem->GetHeight(), TF_NEAREST, TR_CLAMP, deviceManager && deviceManager->IsHDROutputActive() ? TD_RGBA16F : TD_LOOKUP_TABLE_RGBA, nullptr, true, false, 1 );
 }
 
 static void R_DepthImage( idImage* image, nvrhi::ICommandList* commandList )
@@ -336,7 +339,7 @@ static void R_HDR_RGBA16FImage_Res64( idImage* image, nvrhi::ICommandList* comma
 }
 static void R_SMAAImage_ResNative( idImage* image, nvrhi::ICommandList* commandList )
 {
-	image->GenerateImage( NULL, renderSystem->GetWidth(), renderSystem->GetHeight(), TF_LINEAR, TR_CLAMP, TD_LOOKUP_TABLE_RGBA, nullptr, true );
+	image->GenerateImage( NULL, renderSystem->GetWidth(), renderSystem->GetHeight(), TF_LINEAR, TR_CLAMP, deviceManager && deviceManager->IsHDROutputActive() ? TD_RGBA16F : TD_LOOKUP_TABLE_RGBA, nullptr, true );
 }
 
 static void R_AmbientOcclusionImage_ResNative( idImage* image, nvrhi::ICommandList* commandList )

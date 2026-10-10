@@ -28,6 +28,20 @@
 
 #include "DeviceManager.h"
 
+idCVar r_hdrOutput( "r_hdrOutput", "0", CVAR_RENDERER | CVAR_ARCHIVE | CVAR_BOOL, "Native HDR10 output (DX12, Windows HDR enabled). Requires restart." );
+idCVar r_hdrPeakNits( "r_hdrPeakNits", "0", CVAR_RENDERER | CVAR_ARCHIVE | CVAR_FLOAT, "HDR peak brightness in nits; 0 uses the display report", 0.f, 4000.f );
+idCVar r_hdrPaperWhiteNits( "r_hdrPaperWhiteNits", "200", CVAR_RENDERER | CVAR_ARCHIVE | CVAR_FLOAT, "HDR paper white and UI brightness in nits", 80.f, 400.f );
+
+float DeviceManager::GetHDRPeakNits() const
+{
+	return idMath::ClampFloat( 400.f, 4000.f, r_hdrPeakNits.GetFloat() > 0.f ? r_hdrPeakNits.GetFloat() : GetHDRDisplayPeakNits() );
+}
+
+float DeviceManager::GetHDRPaperWhiteNits() const
+{
+	return Min( GetHDRPeakNits(), idMath::ClampFloat( 80.f, 400.f, r_hdrPaperWhiteNits.GetFloat() ) );
+}
+
 // Either move RenderPass to sys or move window resizing logic
 #include "renderer/RenderPass.h"
 

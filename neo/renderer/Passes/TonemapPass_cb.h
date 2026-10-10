@@ -44,4 +44,6 @@ struct ToneMappingConstants
 
 	idVec2 colorLUTTextureSize;
 	idVec2 colorLUTTextureSizeInv;
+	float hdrPeakRatio;
+	float hdrPadding[3];
 };

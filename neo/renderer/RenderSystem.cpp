@@ -786,6 +786,7 @@ const emptyCommand_t* idRenderSystemLocal::SwapCommandBuffers_FinishCommandBuffe
 	setBufferCommand_t* cmd2 = ( setBufferCommand_t* )R_GetCommandBuffer( sizeof( *cmd2 ) );
 	cmd2->commandId = RC_SET_BUFFER;
 	cmd2->buffer = 0;
+	cmd2->frameIndex = frameCount;
 
 	// the old command buffer can now be rendered, while the new one can
 	// be built in parallel

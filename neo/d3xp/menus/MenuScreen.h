@@ -1369,6 +1369,10 @@ public:
 			SYSTEM_FIELD_FRAMERATE,
 			SYSTEM_FIELD_VSYNC,
 			SYSTEM_FIELD_ANTIALIASING,
+			SYSTEM_FIELD_FRAME_GENERATION,
+			SYSTEM_FIELD_HDR_OUTPUT,
+			SYSTEM_FIELD_HDR_PEAK,
+			SYSTEM_FIELD_HDR_PAPER_WHITE,
 			// RB begin
 			SYSTEM_FIELD_RENDERMODE,
 			SYSTEM_FIELD_AMBIENT_BRIGHTNESS,
@@ -1405,6 +1409,10 @@ public:
 		idStr originalRenderAPI;
 		int originalFramerate;
 		int originalAntialias;
+		bool originalFrameGeneration;
+		bool originalHDROutput;
+		float originalHDRPeak;
+		float originalHDRPaperWhite;
 		int originalVsync;
 		float originalBrightness;
 		float originalVolume;

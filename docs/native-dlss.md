@@ -40,9 +40,13 @@ signed release runtime files beside the executable:
 - `sl.common.dll`
 - `sl.dlss.dll`
 - `nvngx_dlss.dll`
+- `sl.dlss_g.dll`
+- `nvngx_dlssg.dll`
+- `sl.reflex.dll`
+- `sl.pcl.dll`
 
 Deploy the rebuilt `base/renderprogs2` shaders along with the executable and these
-four DLLs. Preserve existing game files and configs when testing a new build.
+eight DLLs. Preserve existing game files and configs when testing a new build.
 The Streamline interposer's NVIDIA signature is checked before loading it.
 Keep the SDK's license and third-party notices with a distribution. Public
 release still requires review of NVIDIA's binary redistribution terms alongside
@@ -57,6 +61,52 @@ DLSS evaluation instead of the feeder. Test the consumer without the feeder in a
 separate game copy, including its supported DLL/driver combination. Native DLSS
 should be verified alone first. Do not include third-party injectors or modified
 NVIDIA binaries in the port's release package.
+
+## Frame Generation preview
+
+Settings > System > DLSS Frame Generation offers Off / On (2x). It defaults to
+Off; changing it requests a restart. Select DLAA or a DLSS quality mode first.
+The console equivalent is `r_dlssFrameGeneration 1` (restart required).
+The local launcher respects saved anti-aliasing and frame-generation choices.
+
+The integration loads Streamline's production DLSS-G, Reflex, and PCL plugins,
+enables Reflex Low Latency, and requests one generated frame per rendered frame.
+It checks runtime hardware/driver support; hardware-accelerated GPU scheduling
+must be enabled in Windows. Unsupported configurations retain normal DLSS/DLAA.
+The SDK reference is NVIDIA's [DLSS-G integration guide](https://github.com/NVIDIA-RTX/Streamline/blob/v2.14.1/docs/ProgrammingGuideDLSS_G.md).
+
+Simulation, render-submit, and present markers share the command buffer's frame
+ID, including with parallel game/render execution. The swap chain is created
+through Streamline's factory proxy so FG controls its back buffers. Frame
+generation suspends during loading, pause, the console, menus, and frames without
+valid DLSS inputs. It is disabled before resize and shutdown. A restart with the
+setting Off unloads the FG plugin before swap-chain creation, avoiding its extra
+presentation path during normal rendering.
+
+Depth and motion vectors are tagged through Present. A separate copy of the
+final scene before the first HUD draw is tagged as HUD-less color. A separate UI
+alpha layer is not supplied yet; the inherited camera-only motion-vector limit
+below also applies to generated frames. Test HUD edges, fast movement, effects,
+and moving characters before treating this as release quality. RHI coexistence
+has not been validated. Engine FPS counters still count rendered frames; they
+do not include generated frames.
+
+The initial RTX 4070 Ti Super smoke test at 3440x1440 verified
+`2 presented frames per rendered frame`, all four DLSS modes, pause/resume, and
+fallback to TAA. The process exited with code 0. The logs are saved as
+`build/dlss-test/fg-first-run.log` and `fg-first-streamline.log`.
+
+Serial rendering (`com_smp 0`) also generated frames before and after a
+3440x1440-to-1920x1080 resize. The transition waits two real frames before
+resuming interpolation. The SDK still logged a transient
+`NvAPI_D3D12_SetAsyncFrameMarker` error while switching display modes, then
+recovered and reported two presented frames again. This remains a preview issue
+to investigate; restarting at the desired resolution avoids that transition.
+See `build/dlss-test/fg-resize.log` and `fg-resize-streamline.log`.
+
+The Off and missing-FG-runtime smoke tests both exited with code 0 and verified
+native DLAA evaluation at 3440x1440. Their logs are `fg-off.log` and
+`fg-missing-runtime.log` under `build/dlss-test`.
 
 ## Validation and current limits
 

@@ -43,6 +43,7 @@ If you have questions concerning this license or the applicable additional terms
 #endif
 
 #include "RenderCommon.h"
+#include "Passes/DlssPass.h"
 
 #include "sys/DeviceManager.h"
 
@@ -418,6 +419,7 @@ r_displayRefresh 70	specify 70 hz, etc
 */
 void R_SetNewMode( const bool fullInit )
 {
+	if( !fullInit ) R_DLSSSuspendFrameGeneration();
 	// try up to three different configurations
 
 	for( int i = 0 ; i < 3; i++ )
@@ -1531,6 +1533,11 @@ void GfxInfo_f( const idCmdArgs& args )
 
 	common->Printf( "Graphics API: %s\n", deviceManager->GetDevice()->getGraphicsAPI() == nvrhi::GraphicsAPI::D3D12 ? "DirectX 12 " : "Vulkan" );
 	common->Printf( "Render Device: %s\n", deviceManager->GetRendererString() );
+	common->Printf( "Display output: %s\n", deviceManager->IsHDROutputActive() ? "HDR10 (PQ / BT.2020, 10-bit)" : "SDR" );
+	if( deviceManager->IsHDROutputActive() )
+	{
+		common->Printf( "HDR brightness: peak %.0f nits, paper white %.0f nits\n", deviceManager->GetHDRPeakNits(), deviceManager->GetHDRPaperWhiteNits() );
+	}
 
 	// print all the display adapters, monitors, and video modes
 	//void DumpAllDisplayDevices();

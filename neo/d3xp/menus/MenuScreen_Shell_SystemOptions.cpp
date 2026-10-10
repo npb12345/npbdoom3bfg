@@ -30,6 +30,11 @@ If you have questions concerning this license or the applicable additional terms
 #pragma hdrstop
 #include "../Game_local.h"
 #include "renderer/Passes/DlssPass.h"
+#include "sys/DeviceManager.h"
+extern DeviceManager* deviceManager;
+extern idCVar r_hdrOutput;
+extern idCVar r_hdrPeakNits;
+extern idCVar r_hdrPaperWhiteNits;
 
 const static int NUM_SYSTEM_OPTIONS_OPTIONS = 8;
 
@@ -118,7 +123,43 @@ void idMenuScreen_Shell_SystemOptions::Initialize( idMenuHandler* data )
 	control->AddEventAction( WIDGET_EVENT_PRESS ).Set( WIDGET_ACTION_COMMAND, idMenuDataSource_SystemSettings::SYSTEM_FIELD_ANTIALIASING );
 	options->AddChild( control );
 
+	control = new( TAG_SWF ) idMenuWidget_ControlButton();
+	control->SetOptionType( OPTION_SLIDER_TEXT );
+	control->SetLabel( "DLSS Frame Generation" );
+	control->SetDescription( "Generate an extra frame with NVIDIA Reflex. Requires DLAA or DLSS and a restart." );
+	control->SetDataSource( &systemData, idMenuDataSource_SystemSettings::SYSTEM_FIELD_FRAME_GENERATION );
+	control->SetupEvents( DEFAULT_REPEAT_TIME, options->GetChildren().Num() );
+	control->AddEventAction( WIDGET_EVENT_PRESS ).Set( WIDGET_ACTION_COMMAND, idMenuDataSource_SystemSettings::SYSTEM_FIELD_FRAME_GENERATION );
+	options->AddChild( control );
+
 	// RB begin
+	control = new( TAG_SWF ) idMenuWidget_ControlButton();
+	control->SetOptionType( OPTION_SLIDER_TEXT );
+	control->SetLabel( "Native HDR" );
+	control->SetDescription( "HDR10 output. Requires DX12, Windows HDR and a restart. Filmic and CRT filters are bypassed; retro modes retain SDR colors." );
+	control->SetDataSource( &systemData, idMenuDataSource_SystemSettings::SYSTEM_FIELD_HDR_OUTPUT );
+	control->SetupEvents( DEFAULT_REPEAT_TIME, options->GetChildren().Num() );
+	control->AddEventAction( WIDGET_EVENT_PRESS ).Set( WIDGET_ACTION_COMMAND, idMenuDataSource_SystemSettings::SYSTEM_FIELD_HDR_OUTPUT );
+	options->AddChild( control );
+
+	control = new( TAG_SWF ) idMenuWidget_ControlButton();
+	control->SetOptionType( OPTION_SLIDER_TEXT );
+	control->SetLabel( "HDR Peak Brightness" );
+	control->SetDescription( "Maximum highlight brightness in nits. Auto uses the display report from Windows." );
+	control->SetDataSource( &systemData, idMenuDataSource_SystemSettings::SYSTEM_FIELD_HDR_PEAK );
+	control->SetupEvents( DEFAULT_REPEAT_TIME, options->GetChildren().Num() );
+	control->AddEventAction( WIDGET_EVENT_PRESS ).Set( WIDGET_ACTION_COMMAND, idMenuDataSource_SystemSettings::SYSTEM_FIELD_HDR_PEAK );
+	options->AddChild( control );
+
+	control = new( TAG_SWF ) idMenuWidget_ControlButton();
+	control->SetOptionType( OPTION_SLIDER_TEXT );
+	control->SetLabel( "HDR Paper White" );
+	control->SetDescription( "Brightness of normal whites and the HUD in nits. Adjusts immediately; 200 is a starting point." );
+	control->SetDataSource( &systemData, idMenuDataSource_SystemSettings::SYSTEM_FIELD_HDR_PAPER_WHITE );
+	control->SetupEvents( DEFAULT_REPEAT_TIME, options->GetChildren().Num() );
+	control->AddEventAction( WIDGET_EVENT_PRESS ).Set( WIDGET_ACTION_COMMAND, idMenuDataSource_SystemSettings::SYSTEM_FIELD_HDR_PAPER_WHITE );
+	options->AddChild( control );
+
 	control = new( TAG_SWF ) idMenuWidget_ControlButton();
 	control->SetOptionType( OPTION_SLIDER_TEXT );
 	control->SetLabel( "Render Mode" );
@@ -440,6 +481,10 @@ void idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings::LoadData
 	originalRenderAPI = r_graphicsAPI.GetString();
 	originalFramerate = com_engineHz.GetInteger();
 	originalAntialias = r_antiAliasing.GetInteger();
+	originalFrameGeneration = r_dlssFrameGeneration.GetBool();
+	originalHDROutput = r_hdrOutput.GetBool();
+	originalHDRPeak = r_hdrPeakNits.GetFloat();
+	originalHDRPaperWhite = r_hdrPaperWhiteNits.GetFloat();
 	originalVsync = r_swapInterval.GetInteger();
 	originalBrightness = r_exposure.GetFloat();
 	originalVolume = s_volume_dB.GetFloat();
@@ -470,6 +515,8 @@ idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings::IsRestartRequ
 */
 bool idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings::IsRestartRequired() const
 {
+	if( originalHDROutput != r_hdrOutput.GetBool() ) return true;
+	if( originalFrameGeneration != r_dlssFrameGeneration.GetBool() ) return true;
 	/*
 	if( originalAntialias != r_antiAliasing.GetInteger() )
 	{
@@ -621,6 +668,22 @@ void idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings::AdjustFi
 			break;
 		}
 		// RB begin
+		case SYSTEM_FIELD_FRAME_GENERATION:
+			if( R_DLSSFrameGenerationAvailable() || r_dlssFrameGeneration.GetBool() )
+				r_dlssFrameGeneration.SetBool( !r_dlssFrameGeneration.GetBool() );
+			break;
+		case SYSTEM_FIELD_HDR_OUTPUT:
+			if( deviceManager->IsHDROutputAvailable() || r_hdrOutput.GetBool() ) r_hdrOutput.SetBool( !r_hdrOutput.GetBool() );
+			break;
+		case SYSTEM_FIELD_HDR_PEAK:
+		{
+			static const int values[] = { 0, 400, 500, 600, 700, 800, 900, 1000, 1200, 1400, 1600, 2000, 3000, 4000 };
+			r_hdrPeakNits.SetInteger( AdjustOption( r_hdrPeakNits.GetInteger(), values, sizeof( values ) / sizeof( values[0] ), adjustAmount ) );
+			break;
+		}
+		case SYSTEM_FIELD_HDR_PAPER_WHITE:
+			r_hdrPaperWhiteNits.SetFloat( idMath::ClampFloat( 80.f, 400.f, r_hdrPaperWhiteNits.GetFloat() + adjustAmount * 10.f ) );
+			break;
 		case SYSTEM_FIELD_RENDERMODE:
 		{
 			static const int numValues = 10;
@@ -811,6 +874,17 @@ idSWFScriptVar idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings
 			}
 			return values[aa];
 		}
+		case SYSTEM_FIELD_FRAME_GENERATION:
+			if( !R_DLSSFrameGenerationAvailable() ) return "Unavailable";
+			if( r_dlssFrameGeneration.GetBool() && !R_DLSSRequested() ) return "On (select DLAA/DLSS)";
+			return r_dlssFrameGeneration.GetBool() ? "On (2x)" : "Off";
+		case SYSTEM_FIELD_HDR_OUTPUT:
+			if( !deviceManager->IsHDROutputAvailable() ) return "Unavailable (DX12 / Windows HDR)";
+			return r_hdrOutput.GetBool() ? "On" : "Off";
+		case SYSTEM_FIELD_HDR_PEAK:
+			return r_hdrPeakNits.GetFloat() > 0.f ? va( "%.0f nits", r_hdrPeakNits.GetFloat() ) : va( "Auto (%.0f nits)", deviceManager->GetHDRDisplayPeakNits() );
+		case SYSTEM_FIELD_HDR_PAPER_WHITE:
+			return va( "%.0f nits", r_hdrPaperWhiteNits.GetFloat() );
 		case SYSTEM_FIELD_RENDERMODE:
 		{
 			static const int numValues = 10;
@@ -833,6 +907,7 @@ idSWFScriptVar idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings
 			return values[ r_renderMode.GetInteger() ];
 		}
 		case SYSTEM_FIELD_FILMIC_POSTFX:
+			if( deviceManager->IsHDROutputActive() ) return "Bypassed (HDR)";
 			if( r_useFilmicPostFX.GetInteger() > 0 )
 			{
 				return "#str_swf_enabled";
@@ -853,6 +928,7 @@ idSWFScriptVar idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings
 				"Advanced",
 			};
 
+			if( deviceManager->IsHDROutputActive() ) return "Bypassed (HDR)";
 			return values[ r_useCRTPostFX.GetInteger() ];
 		}
 
@@ -900,6 +976,8 @@ idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings::IsDataChanged
 */
 bool idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings::IsDataChanged() const
 {
+	if( originalHDROutput != r_hdrOutput.GetBool() || originalHDRPeak != r_hdrPeakNits.GetFloat() || originalHDRPaperWhite != r_hdrPaperWhiteNits.GetFloat() ) return true;
+	if( originalFrameGeneration != r_dlssFrameGeneration.GetBool() ) return true;
 	if( idStr::Icmp( r_graphicsAPI.GetString(), originalRenderAPI ) != 0 )
 	{
 		return true;

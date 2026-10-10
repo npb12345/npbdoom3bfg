@@ -116,7 +116,31 @@ void main(
 	o_rgba.rgb = ConvertToLDR( HdrColor.rgb );
 	o_rgba.a = HdrColor.a;
 
-	if( g_ToneMapping.colorLUTTextureSize.x > 0 )
+	if( g_ToneMapping.hdrPeakRatio > 0.0 )
+	{
+		// Keep the SDR color balance. Extending each channel independently
+		// exaggerates warm lights: red can enter the HDR shoulder while green
+		// and blue are still below paper white. Instead extend luminance and
+		// apply one gain to all channels, including the peak-luminance limit.
+		float3 sceneColor = max( o_rgba.rgb, 0.0 );
+		float3 baseColor = g_ToneMapping.colorLUTTextureSize.x > 0.0
+			? ApplyColorLUT( sceneColor ) : ACESFilm( sceneColor );
+		float baseLuminance = Luminance( baseColor );
+		// Anchor middle gray while deepening the toe and separating bright
+		// whites from the midtones. Zero stays zero; there is no black cutoff.
+		float contrastLuminance = 0.18 * pow( max( baseLuminance, 0.0 ) / 0.18, 1.18 );
+		contrastLuminance = min( contrastLuminance, g_ToneMapping.hdrPeakRatio );
+		// Enter the HDR shoulder earlier so ordinary bright lights use the
+		// display's range, instead of reserving it for extreme scene values.
+		float headroom = max( g_ToneMapping.hdrPeakRatio - contrastLuminance, 0.0 );
+		float highlightLuminance = max( Luminance( sceneColor ) - 0.6, 0.0 );
+		float extraLuminance = headroom * ( 1.0 - exp( -2.0 * highlightLuminance / max( headroom, 0.001 ) ) );
+		float gain = ( contrastLuminance + extraLuminance ) / max( baseLuminance, 0.000001 );
+		float maxChannel = max( baseColor.r, max( baseColor.g, baseColor.b ) );
+		gain = min( gain, g_ToneMapping.hdrPeakRatio / max( maxChannel, 0.000001 ) );
+		o_rgba.rgb = baseColor * gain;
+	}
+	else if( g_ToneMapping.colorLUTTextureSize.x > 0 )
 	{
 		o_rgba.rgb = ApplyColorLUT( o_rgba.rgb );
 	}

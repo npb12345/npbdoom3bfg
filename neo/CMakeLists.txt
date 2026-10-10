@@ -1467,7 +1467,8 @@ if(USE_STREAMLINE)
     target_include_directories(${APP_NAME} PRIVATE "${STREAMLINE_SDK_DIR}/include")
     target_compile_definitions(${APP_NAME} PRIVATE USE_STREAMLINE=1)
     # Runtime loading preserves startup without the optional DLLs. Deploy signed release files only.
-    foreach(DLSS_DLL sl.interposer.dll sl.common.dll sl.dlss.dll nvngx_dlss.dll)
+    foreach(DLSS_DLL sl.interposer.dll sl.common.dll sl.dlss.dll nvngx_dlss.dll
+            sl.dlss_g.dll nvngx_dlssg.dll sl.reflex.dll sl.pcl.dll)
         add_custom_command(TARGET ${APP_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${STREAMLINE_SDK_DIR}/bin/x64/${DLSS_DLL}" "$<TARGET_FILE_DIR:${APP_NAME}>/${DLSS_DLL}")

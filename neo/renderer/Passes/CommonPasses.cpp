@@ -308,6 +308,8 @@ void CommonRenderPasses::BlitTexture( nvrhi::ICommandList* commandList, const Bl
 	state.blendConstantColor = params.blendConstantColor;
 
 	BlitConstants blitConstants = {};
+	blitConstants.hdrPaperWhiteNits = params.hdrPaperWhiteNits;
+	blitConstants.hdrPeakNits = params.hdrPeakNits;
 	blitConstants.sourceOrigin = idVec2( params.sourceBox.x, params.sourceBox.y );
 	blitConstants.sourceSize = idVec2( params.sourceBox.z, params.sourceBox.w );
 	blitConstants.targetOrigin = idVec2( params.targetBox.x, params.targetBox.y );

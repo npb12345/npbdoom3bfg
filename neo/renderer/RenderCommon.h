@@ -680,6 +680,7 @@ struct setBufferCommand_t
 	renderCommand_t		commandId;
 	renderCommand_t* 	next;
 	int					buffer;
+	int                     frameIndex; // follows this command buffer through SMP rendering
 };
 
 struct drawSurfsCommand_t

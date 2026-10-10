@@ -209,6 +209,14 @@ public:
 	}
 
 	virtual nvrhi::ITexture* GetCurrentBackBuffer() = 0;
+	// HDR composes into FP16; only the final output pass writes the PQ swap chain.
+	virtual bool IsHDROutputActive() const { return false; }
+	virtual bool IsHDROutputAvailable() const { return false; }
+	virtual float GetHDRDisplayPeakNits() const { return 1000.f; }
+	virtual nvrhi::IFramebuffer* GetHDRPresentFramebuffer() { return nullptr; }
+	virtual nvrhi::ITexture* GetPresentBackBuffer() { return GetCurrentBackBuffer(); }
+	float GetHDRPeakNits() const;
+	float GetHDRPaperWhiteNits() const;
 	virtual nvrhi::ITexture* GetBackBuffer( uint32_t index ) = 0;
 	virtual uint32_t GetCurrentBackBufferIndex() = 0;
 	virtual uint32_t GetBackBufferCount() = 0;

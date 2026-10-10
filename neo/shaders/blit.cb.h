@@ -32,6 +32,8 @@ struct BlitConstants
 	float2  targetSize;
 
 	float   sharpenFactor;
+	float   hdrPaperWhiteNits;
+	float   hdrPeakNits;
 };
 
 #endif // BLIT_CB_H

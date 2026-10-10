@@ -45,6 +45,8 @@ struct ToneMappingConstants
 
 	float2 colorLUTTextureSize;
 	float2 colorLUTTextureSizeInv;
+	float hdrPeakRatio;
+	float3 hdrPadding;
 };
 
 #endif // DEPTH_CB_H

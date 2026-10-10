@@ -33,6 +33,7 @@ If you have questions concerning this license or the applicable additional terms
 
 #include "Common_local.h"
 #include "../renderer/Image.h"
+#include "../renderer/Passes/DlssPass.h"
 
 // RB begin
 #if defined(USE_DOOMCLASSIC)
@@ -161,6 +162,7 @@ int idGameThread::Run()
 	}
 
 	commonLocal.frameTiming.finishDrawTime = Sys_Microseconds();
+	R_DLSSSimulationEnd();
 
 	SetThreadRenderTime( ( commonLocal.frameTiming.finishDrawTime - commonLocal.frameTiming.finishGameTime ) / 1000 );
 
@@ -641,6 +643,10 @@ void idCommonLocal::Frame()
 			renderSystem->SwapCommandBuffers_FinishRendering( &time_frontend, &time_backend, &time_moc, &time_gpu, &stats_backend, &stats_frontend );
 		}
 		frameTiming.finishSyncTime = Sys_Microseconds();
+		// Use the renderer's command-buffer frame ID, not the main-loop ID: SMP
+		// submits the previous simulation while building the next one.
+		R_DLSSSimulationStart( !pauseGame && !console->Active() &&
+			!( game && game->Shell_IsActive() ) && com_activeApp.GetBool() );
 
 		// RB: slow down engine in background so it does not eat up so many resources along other 3D tools
 		if( !com_activeApp.GetBool() && !IsServer() /* and not VR */ )

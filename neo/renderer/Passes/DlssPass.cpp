@@ -4,6 +4,9 @@
 #include "../RenderCommon.h"
 #include "DlssPass.h"
 
+idCVar r_dlssFrameGeneration( "r_dlssFrameGeneration", "0", CVAR_RENDERER | CVAR_ARCHIVE | CVAR_BOOL,
+    "DLSS Frame Generation (DX12, DLAA/DLSS and supported hardware required; restart after changing)" );
+
 bool R_DLSSRequested()
 {
     return r_renderMode.GetInteger() == RENDERMODE_DOOM &&
@@ -15,6 +18,9 @@ bool R_DLSSRequested()
 #include <d3d12.h>
 #include <sl.h>
 #include <sl_dlss.h>
+#include <sl_dlss_g.h>
+#include <sl_reflex.h>
+#include <sl_pcl.h>
 #include <sl_security.h>
 #include <mutex>
 
@@ -35,6 +41,15 @@ namespace
     int previousWidth = 0, previousHeight = 0;
     int cachedMode = -1, cachedOutputWidth = 0, cachedOutputHeight = 0;
     int cachedWidth = 0, cachedHeight = 0;
+    bool fgAvailable = false, fgLoaded = false, fgEnabled = false;
+    bool frameHasDLSS = false, frameHasHudless = false, frameAllowsFG = false;
+    bool reportedGeneratedFrames = false;
+    int fgResumeDelay = 0;
+    sl::FrameToken* renderToken = nullptr;
+    int simulationFrame = -1;
+    struct FrameContext { int index = -1; sl::FrameToken* token = nullptr; bool allowFG = false; };
+    FrameContext frames[16];
+    nvrhi::TextureHandle hudless;
 
 #define DLSS_API( name ) decltype( &name ) p_##name = nullptr
     DLSS_API( slInit );
@@ -47,9 +62,54 @@ namespace
     DLSS_API( slSetConstants );
     DLSS_API( slSetTagForFrame );
     DLSS_API( slEvaluateFeature );
+    DLSS_API( slSetFeatureLoaded );
 #undef DLSS_API
     PFun_slDLSSGetOptimalSettings* getOptimalSettings = nullptr;
     PFun_slDLSSSetOptions* setOptions = nullptr;
+    PFun_slDLSSGSetOptions* setFGOptions = nullptr;
+    PFun_slDLSSGGetState* getFGState = nullptr;
+    PFun_slReflexSetOptions* setReflexOptions = nullptr;
+    PFun_slReflexSleep* reflexSleep = nullptr;
+    PFun_slPCLSetMarker* setMarker = nullptr;
+
+    bool CheckFG( sl::Result result, const char* operation )
+    {
+        if( result == sl::Result::eOk ) return true;
+        common->Warning( "DLSS Frame Generation: %s failed (%d); disabling frame generation", operation, int( result ) );
+        fgAvailable = false;
+        return false;
+    }
+
+    FrameContext& Frame( int index )
+    {
+        FrameContext& frame = frames[unsigned( index ) % 16];
+        if( frame.index != index )
+        {
+            frame = FrameContext();
+            frame.index = index;
+            uint32_t slIndex = uint32_t( index );
+            CheckFG( p_slGetNewFrameToken( frame.token, &slIndex ), "frame token" );
+        }
+        return frame;
+    }
+
+    void Marker( sl::PCLMarker marker, sl::FrameToken* token )
+    {
+        if( setMarker && token ) CheckFG( setMarker( marker, *token ), "Reflex marker" );
+    }
+
+    void SetFGEnabled( bool enabled )
+    {
+        if( !fgLoaded || !setFGOptions || enabled == fgEnabled ) return;
+        sl::DLSSGOptions options;
+        options.mode = enabled ? sl::DLSSGMode::eOn : sl::DLSSGMode::eOff;
+        options.numFramesToGenerate = 1;
+        if( CheckFG( setFGOptions( viewport, options ), "setting mode" ) )
+        {
+            fgEnabled = enabled;
+            common->Printf( "DLSS Frame Generation: %s\n", enabled ? "On (2x)" : "Off" );
+        }
+    }
 
     bool Check( sl::Result result, const char* operation )
     {
@@ -90,6 +150,8 @@ namespace
 
 bool R_DLSSAvailable() { std::lock_guard<std::mutex> lock( apiMutex ); return available; }
 const char* R_DLSSStatus() { std::lock_guard<std::mutex> lock( apiMutex ); return statusText; }
+bool R_DLSSFrameGenerationAvailable() { std::lock_guard<std::mutex> lock( apiMutex ); return fgAvailable; }
+bool R_DLSSFrameGenerationLoaded() { return fgLoaded; }
 
 void R_DLSSInit()
 {
@@ -121,14 +183,15 @@ void R_DLSSInit()
     LOAD_DLSS_API( slSetConstants );
     LOAD_DLSS_API( slSetTagForFrame );
     LOAD_DLSS_API( slEvaluateFeature );
+    LOAD_DLSS_API( slSetFeatureLoaded );
 #undef LOAD_DLSS_API
-    const sl::Feature features[] = { sl::kFeatureDLSS };
+    const sl::Feature features[] = { sl::kFeatureDLSS, sl::kFeatureDLSS_G, sl::kFeatureReflex, sl::kFeaturePCL };
     const wchar_t* paths[] = { pluginDirectory.c_str() };
     sl::Preferences preferences;
     preferences.flags = sl::PreferenceFlags::eUseManualHooking |
         sl::PreferenceFlags::eDisableCLStateTracking | sl::PreferenceFlags::eUseFrameBasedResourceTagging;
     preferences.featuresToLoad = features;
-    preferences.numFeaturesToLoad = 1;
+    preferences.numFeaturesToLoad = 4;
     preferences.pathsToPlugins = paths;
     preferences.numPathsToPlugins = 1;
     preferences.pathToLogsAndData = pluginDirectory.c_str();
@@ -154,15 +217,56 @@ void R_DLSSSetDevice( void* nativeDevice )
     available = true;
     statusText = "Native DLSS available (DX12)";
     common->Printf( "%s\n", statusText );
+
+    // FG failures must not disable the working Super Resolution / DLAA path.
+    fgAvailable = p_slIsFeatureSupported( sl::kFeatureDLSS_G, adapter ) == sl::Result::eOk &&
+        p_slIsFeatureSupported( sl::kFeatureReflex, adapter ) == sl::Result::eOk;
+    if( fgAvailable )
+    {
+#define LOAD_FG_FUNCTION( feature, name, target ) \
+        fgAvailable = fgAvailable && CheckFG( p_slGetFeatureFunction( feature, name, reinterpret_cast<void*&>( target ) ), name )
+        LOAD_FG_FUNCTION( sl::kFeatureDLSS_G, "slDLSSGSetOptions", setFGOptions );
+        LOAD_FG_FUNCTION( sl::kFeatureDLSS_G, "slDLSSGGetState", getFGState );
+        LOAD_FG_FUNCTION( sl::kFeatureReflex, "slReflexSetOptions", setReflexOptions );
+        LOAD_FG_FUNCTION( sl::kFeatureReflex, "slReflexSleep", reflexSleep );
+        LOAD_FG_FUNCTION( sl::kFeaturePCL, "slPCLSetMarker", setMarker );
+#undef LOAD_FG_FUNCTION
+    }
+    fgLoaded = fgAvailable && r_dlssFrameGeneration.GetBool();
+    if( !fgLoaded )
+    {
+        p_slSetFeatureLoaded( sl::kFeatureDLSS_G, false );
+        setFGOptions = nullptr;
+        getFGState = nullptr;
+    }
+    else
+    {
+        sl::ReflexOptions reflex;
+        reflex.mode = sl::ReflexMode::eLowLatency;
+        CheckFG( setReflexOptions( reflex ), "enabling Reflex" );
+        // Start disabled until a complete gameplay frame has all its inputs.
+        sl::DLSSGOptions options;
+        CheckFG( setFGOptions( viewport, options ), "initial options" );
+    }
+    common->Printf( "DLSS Frame Generation: %s%s\n", fgAvailable ? "supported" : "unavailable (check GPU, driver and hardware scheduling)",
+        fgLoaded ? "; loaded with Reflex" : "; not loaded" );
+}
+
+void R_DLSSUpgradeFactory( void** factory )
+{
+    if( fgLoaded ) CheckFG( p_slUpgradeInterface( factory ), "DXGI factory setup" );
 }
 
 void R_DLSSUpgradeSwapChain( void** swapChain )
 {
-    if( initialized ) Check( p_slUpgradeInterface( swapChain ), "swap chain setup" );
+    // An upgraded factory already returns the FG proxy swap chain.
+    if( initialized && !fgLoaded ) Check( p_slUpgradeInterface( swapChain ), "swap chain setup" );
 }
 
 void R_DLSSShutdown()
 {
+    SetFGEnabled( false );
+    hudless = nullptr;
     if( initialized ) p_slShutdown();
     initialized = available = false;
     getOptimalSettings = nullptr;
@@ -170,6 +274,17 @@ void R_DLSSShutdown()
     previousFrame = previousTime = previousMode = cachedMode = -1;
     cachedWidth = cachedHeight = 0;
     statusText = "DLSS runtime not loaded";
+    fgAvailable = fgLoaded = fgEnabled = false;
+    renderToken = nullptr;
+    setFGOptions = nullptr;
+    getFGState = nullptr;
+    setReflexOptions = nullptr;
+    reflexSleep = nullptr;
+    setMarker = nullptr;
+    simulationFrame = -1;
+    reportedGeneratedFrames = false;
+    fgResumeDelay = 0;
+    for( auto& frame : frames ) frame = FrameContext();
     if( library ) { FreeLibrary( library ); library = nullptr; }
 }
 
@@ -210,9 +325,15 @@ bool R_DLSSEvaluate( nvrhi::ICommandList* commands, const viewDef_t* view,
     const int width = view->viewport.x2 - view->viewport.x1 + 1;
     const int height = view->viewport.y2 - view->viewport.y1 + 1;
     auto options = Options( output->getDesc().width, output->getDesc().height );
+    // A queued view can still carry the old render size on a resolution or
+    // quality change. Use TAA for that transition instead of tagging an input
+    // extent that the new DLSS mode cannot accept (particularly DLAA).
+    if( cachedMode != r_antiAliasing.GetInteger() ||
+        cachedOutputWidth != int( options.outputWidth ) || cachedOutputHeight != int( options.outputHeight ) ||
+        width != cachedWidth || height != cachedHeight ) return false;
     if( !Check( setOptions( viewport, options ), "setting mode" ) ) return false;
-    sl::FrameToken* token = nullptr;
-    if( !Check( p_slGetNewFrameToken( token, nullptr ), "frame token" ) ) return false;
+    sl::FrameToken* token = renderToken;
+    if( !token && !Check( p_slGetNewFrameToken( token, nullptr ), "frame token" ) ) return false;
     bool reset = !historyValid || previousFrame + 1 != view->taaFrameCount ||
         previousMode != r_antiAliasing.GetInteger() || previousWidth != width || previousHeight != height ||
         view->renderView.time[0] < previousTime || view->renderView.time[0] - previousTime > 250 ||
@@ -264,8 +385,8 @@ bool R_DLSSEvaluate( nvrhi::ICommandList* commands, const viewDef_t* view,
     sl::Extent outputExtent{ 0, 0, options.outputWidth, options.outputHeight };
     sl::ResourceTag tags[] = {
         { &inputColor, sl::kBufferTypeScalingInputColor, sl::ResourceLifecycle::eValidUntilEvaluate, &inputExtent },
-        { &inputDepth, sl::kBufferTypeDepth, sl::ResourceLifecycle::eValidUntilEvaluate, &inputExtent },
-        { &inputMotion, sl::kBufferTypeMotionVectors, sl::ResourceLifecycle::eValidUntilEvaluate, &inputExtent },
+        { &inputDepth, sl::kBufferTypeDepth, fgLoaded ? sl::ResourceLifecycle::eValidUntilPresent : sl::ResourceLifecycle::eValidUntilEvaluate, &inputExtent },
+        { &inputMotion, sl::kBufferTypeMotionVectors, fgLoaded ? sl::ResourceLifecycle::eValidUntilPresent : sl::ResourceLifecycle::eValidUntilEvaluate, &inputExtent },
         { &outputColor, sl::kBufferTypeScalingOutputColor, sl::ResourceLifecycle::eValidUntilEvaluate, &outputExtent }
     };
     auto* nativeCommands = static_cast<ID3D12GraphicsCommandList*>( commands->getNativeObject( nvrhi::ObjectTypes::D3D12_GraphicsCommandList ) );
@@ -276,6 +397,7 @@ bool R_DLSSEvaluate( nvrhi::ICommandList* commands, const viewDef_t* view,
         success = Check( p_slEvaluateFeature( sl::kFeatureDLSS, *token, inputs, 1, nativeCommands ), "evaluation" );
     }
     commands->clearState();
+    frameHasDLSS = success;
     if( success && ( previousMode != r_antiAliasing.GetInteger() || previousWidth != width || previousHeight != height ) )
     {
         common->Printf( "DLSS: native evaluation succeeded, mode %d, %dx%d -> %ux%u\n",
@@ -290,12 +412,141 @@ bool R_DLSSEvaluate( nvrhi::ICommandList* commands, const viewDef_t* view,
     previousHeight = height;
     return success;
 }
+
+void R_DLSSSimulationStart( bool allowFrameGeneration )
+{
+    std::lock_guard<std::mutex> lock( apiMutex );
+    if( !fgLoaded ) return;
+    simulationFrame = tr.GetFrameCount();
+    auto& frame = Frame( simulationFrame );
+    frame.allowFG = allowFrameGeneration;
+    if( frame.token )
+    {
+        CheckFG( reflexSleep( *frame.token ), "Reflex sleep" );
+        Marker( sl::PCLMarker::eSimulationStart, frame.token );
+    }
+}
+
+void R_DLSSSimulationEnd()
+{
+    std::lock_guard<std::mutex> lock( apiMutex );
+    if( fgLoaded && simulationFrame >= 0 ) Marker( sl::PCLMarker::eSimulationEnd, Frame( simulationFrame ).token );
+}
+
+void R_DLSSRenderStart( int frameIndex )
+{
+    std::lock_guard<std::mutex> lock( apiMutex );
+    frameHasDLSS = frameHasHudless = frameAllowsFG = false;
+    renderToken = nullptr;
+    if( !fgLoaded ) return;
+    auto& frame = Frame( frameIndex );
+    renderToken = frame.token;
+    frameAllowsFG = frame.allowFG;
+    Marker( sl::PCLMarker::eRenderSubmitStart, renderToken );
+}
+
+void R_DLSSRenderEnd()
+{
+    std::lock_guard<std::mutex> lock( apiMutex );
+    if( fgLoaded ) Marker( sl::PCLMarker::eRenderSubmitEnd, renderToken );
+}
+
+void R_DLSSCaptureHudless( nvrhi::IDevice* device, nvrhi::ICommandList* commands, nvrhi::ITexture* backBuffer )
+{
+    std::lock_guard<std::mutex> lock( apiMutex );
+    if( !fgLoaded || !fgAvailable || !renderToken || !frameHasDLSS || frameHasHudless || !frameAllowsFG ) return;
+    const auto& desc = backBuffer->getDesc();
+    if( !hudless || hudless->getDesc().width != desc.width || hudless->getDesc().height != desc.height || hudless->getDesc().format != desc.format )
+    {
+        auto copyDesc = desc;
+        copyDesc.debugName = "DLSS Frame Generation HUD-less color";
+        copyDesc.initialState = nvrhi::ResourceStates::ShaderResource;
+        copyDesc.keepInitialState = true;
+        hudless = device->createTexture( copyDesc );
+    }
+    if( !hudless ) { fgAvailable = false; return; }
+    commands->copyTexture( hudless, nvrhi::TextureSlice(), backBuffer, nvrhi::TextureSlice() );
+    commands->setTextureState( hudless, nvrhi::AllSubresources, nvrhi::ResourceStates::ShaderResource );
+    commands->commitBarriers();
+    sl::Resource resource( sl::ResourceType::eTex2d, hudless->getNativeObject( nvrhi::ObjectTypes::D3D12_Resource ),
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE );
+    sl::Extent extent{ 0, 0, desc.width, desc.height };
+    sl::ResourceTag tag( &resource, sl::kBufferTypeHUDLessColor, sl::ResourceLifecycle::eValidUntilPresent, &extent );
+    frameHasHudless = CheckFG( p_slSetTagForFrame( *renderToken, viewport, &tag, 1,
+        commands->getNativeObject( nvrhi::ObjectTypes::D3D12_GraphicsCommandList ) ), "HUD-less color" );
+    commands->clearState();
+}
+
+void R_DLSSBeforePresent( unsigned width, unsigned height )
+{
+    std::lock_guard<std::mutex> lock( apiMutex );
+    if( !fgLoaded ) return;
+    if( renderToken )
+    {
+        // Explicit extents also cover menu/loading frames with no 3D inputs.
+        sl::Extent extent{ 0, 0, width, height };
+        sl::ResourceTag tag( nullptr, sl::kBufferTypeBackbuffer, sl::ResourceLifecycle::eValidUntilPresent, &extent );
+        CheckFG( p_slSetTagForFrame( *renderToken, viewport, &tag, 1, nullptr ), "backbuffer extent" );
+    }
+    SetFGEnabled( fgAvailable && fgResumeDelay == 0 && r_dlssFrameGeneration.GetBool() && R_DLSSRequested() &&
+        frameAllowsFG && frameHasDLSS && frameHasHudless );
+    Marker( sl::PCLMarker::ePresentStart, renderToken );
+}
+
+void R_DLSSAfterPresent()
+{
+    std::lock_guard<std::mutex> lock( apiMutex );
+    if( !fgLoaded ) return;
+    Marker( sl::PCLMarker::ePresentEnd, renderToken );
+    if( fgResumeDelay > 0 ) --fgResumeDelay;
+    if( fgEnabled && getFGState )
+    {
+        sl::DLSSGState state;
+        if( CheckFG( getFGState( viewport, state, nullptr ), "runtime state" ) )
+        {
+            if( state.status != sl::DLSSGStatus::eOk )
+            {
+                common->Warning( "DLSS Frame Generation: runtime status 0x%x; disabling", unsigned( state.status ) );
+                fgAvailable = false;
+                SetFGEnabled( false );
+            }
+            else if( state.numFramesActuallyPresented > 1 && !reportedGeneratedFrames )
+            {
+                common->Printf( "DLSS Frame Generation: verified %u presented frames per rendered frame\n", state.numFramesActuallyPresented );
+                reportedGeneratedFrames = true;
+            }
+        }
+    }
+}
+
+void R_DLSSSuspendFrameGeneration()
+{
+    std::lock_guard<std::mutex> lock( apiMutex );
+    SetFGEnabled( false );
+    frameHasDLSS = frameHasHudless = false;
+    // Let the resized presentation path consume real frames before enabling
+    // interpolation again; do not issue Off and On within one SDK frame.
+    fgResumeDelay = 2;
+    previousFrame = -1;
+    reportedGeneratedFrames = false;
+}
 #else
 bool R_DLSSAvailable() { return false; }
 const char* R_DLSSStatus() { return "Native DLSS requires a Windows DX12 build with Streamline"; }
 void R_DLSSInit() {}
 void R_DLSSSetDevice( void* ) {}
 void R_DLSSUpgradeSwapChain( void** ) {}
+void R_DLSSUpgradeFactory( void** ) {}
+bool R_DLSSFrameGenerationAvailable() { return false; }
+bool R_DLSSFrameGenerationLoaded() { return false; }
+void R_DLSSSimulationStart( bool ) {}
+void R_DLSSSimulationEnd() {}
+void R_DLSSRenderStart( int ) {}
+void R_DLSSRenderEnd() {}
+void R_DLSSCaptureHudless( nvrhi::IDevice*, nvrhi::ICommandList*, nvrhi::ITexture* ) {}
+void R_DLSSBeforePresent( unsigned, unsigned ) {}
+void R_DLSSAfterPresent() {}
+void R_DLSSSuspendFrameGeneration() {}
 void R_DLSSShutdown() {}
 bool R_DLSSRenderSize( int, int, int&, int& ) { return false; }
 bool R_DLSSEvaluate( nvrhi::ICommandList*, const viewDef_t*, nvrhi::ITexture*, nvrhi::ITexture*,

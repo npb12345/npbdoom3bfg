@@ -5478,7 +5478,29 @@ void idRenderBackend::ExecuteBackEndCommands( const emptyCommand_t* cmds )
 	//	return;
 	//}
 
+	int dlssFrameIndex = tr.GetFrameCount();
+	for( const emptyCommand_t* command = cmds; command; command = ( const emptyCommand_t* )command->next )
+	{
+		if( command->commandId == RC_SET_BUFFER )
+		{
+			dlssFrameIndex = ( ( const setBufferCommand_t* )command )->frameIndex;
+			break;
+		}
+	}
+	R_DLSSRenderStart( dlssFrameIndex );
 	GL_StartFrame();
+	// Both generated and real frames must use the same HDR10 encoding.
+	auto encodeHDROutput = [&]()
+	{
+		if( !deviceManager->IsHDROutputActive() ) return;
+		BlitParameters params;
+		params.sourceTexture = deviceManager->GetCurrentBackBuffer();
+		params.targetFramebuffer = deviceManager->GetHDRPresentFramebuffer();
+		params.hdrPaperWhiteNits = deviceManager->GetHDRPaperWhiteNits();
+		params.hdrPeakNits = deviceManager->GetHDRPeakNits();
+		commonPasses.BlitTexture( commandList, params, &bindingCache );
+	};
+	bool capturedHudless = false;
 
 	uint64 backEndStartTime = Sys_Microseconds();
 
@@ -5497,6 +5519,12 @@ void idRenderBackend::ExecuteBackEndCommands( const emptyCommand_t* cmds )
 				break;
 
 			case RC_DRAW_VIEW_GUI:
+				if( !capturedHudless && drawView3D )
+				{
+					if( R_DLSSFrameGenerationLoaded() ) encodeHDROutput();
+					R_DLSSCaptureHudless( deviceManager->GetDevice(), commandList, deviceManager->GetPresentBackBuffer() );
+					capturedHudless = true;
+				}
 				if( drawView3D )
 				{
 					// SRS - Capture separate timestamps for overlay GUI rendering when RC_DRAW_VIEW_3D timestamps are active
@@ -5553,6 +5581,9 @@ void idRenderBackend::ExecuteBackEndCommands( const emptyCommand_t* cmds )
 	}
 
 	DrawFlickerBox();
+	encodeHDROutput();
+	// Also cover views with the HUD hidden.
+	R_DLSSCaptureHudless( deviceManager->GetDevice(), commandList, deviceManager->GetPresentBackBuffer() );
 
 	// stop rendering on this thread
 	uint64 backEndFinishTime = Sys_Microseconds();
@@ -5560,6 +5591,7 @@ void idRenderBackend::ExecuteBackEndCommands( const emptyCommand_t* cmds )
 
 	// SRS - capture backend timing before GL_EndFrame() since it can block when r_mvkSynchronousQueueSubmits is enabled on macOS/MoltenVK
 	GL_EndFrame();
+	R_DLSSRenderEnd();
 
 	if( r_debugRenderToTexture.GetInteger() == 1 )
 	{
@@ -6518,7 +6550,8 @@ void idRenderBackend::PostProcess( const void* data )
 	}
 #endif
 
-	if( r_useFilmicPostFX.GetBool() || r_renderMode.GetInteger() > 0 )
+	// Keep retro modes' SDR palette, but do not clip normal HDR rendering.
+	if( ( !deviceManager->IsHDROutputActive() && r_useFilmicPostFX.GetBool() ) || r_renderMode.GetInteger() > 0 )
 	{
 		OPTICK_GPU_EVENT( "Render_FilmicPostFX" );
 
@@ -6711,6 +6744,7 @@ void idRenderBackend::PostProcess( const void* data )
 
 void idRenderBackend::CRTPostProcess()
 {
+	if( deviceManager->IsHDROutputActive() ) return;
 #define CRT_QUARTER_RES 0
 
 	nvrhi::ObjectType commandObject = nvrhi::ObjectTypes::D3D12_GraphicsCommandList;

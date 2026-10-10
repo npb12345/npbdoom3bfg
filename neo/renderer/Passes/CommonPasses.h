@@ -56,6 +56,8 @@ struct BlitParameters
 	idVec4 sourceBox = idVec4( 0.f, 0.f, 1.f, 1.f );
 
 	BlitSampler sampler = BlitSampler::Linear;
+	float hdrPaperWhiteNits = 0.f; // Nonzero enables Rec.709 working space -> HDR10.
+	float hdrPeakNits = 0.f;
 	nvrhi::BlendState::RenderTarget blendState;
 	nvrhi::Color blendConstantColor = nvrhi::Color( 0.f );
 };
@@ -69,6 +71,8 @@ struct BlitConstants
 	idVec2  targetSize;
 
 	float   sharpenFactor;
+	float   hdrPaperWhiteNits;
+	float   hdrPeakNits;
 };
 
 class CommonRenderPasses

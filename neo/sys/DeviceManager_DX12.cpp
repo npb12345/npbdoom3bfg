@@ -32,7 +32,7 @@
 #include <sys/DeviceManager.h>
 
 #include <Windows.h>
-#include <dxgi1_5.h>
+#include <dxgi1_6.h>
 #include <dxgidebug.h>
 
 #include <nvrhi/d3d12.h>
@@ -45,6 +45,7 @@
 #pragma comment(lib, "dxgi.lib")
 
 using nvrhi::RefCountPtr;
+extern idCVar r_hdrOutput;
 
 #define HR_RETURN(hr) if(FAILED(hr)) return false
 
@@ -67,6 +68,11 @@ class DeviceManager_DX12 : public DeviceManager
 
 	std::vector<RefCountPtr<ID3D12Resource>>    m_SwapChainBuffers;
 	std::vector<nvrhi::TextureHandle>           m_RhiSwapChainBuffers;
+	std::vector<nvrhi::TextureHandle>           m_HDRCompositionBuffers;
+	std::vector<nvrhi::FramebufferHandle>       m_HDRPresentFramebuffers;
+	bool m_HDRAvailable = false;
+	bool m_HDRActive = false;
+	float m_HDRDisplayPeakNits = 1000.f;
 	nvrhi::EventQueryHandle						m_FrameWaitQuery;
 
 	nvrhi::DeviceHandle                         m_NvrhiDevice;
@@ -74,6 +80,17 @@ class DeviceManager_DX12 : public DeviceManager
 	std::string                                 m_RendererString;
 
 public:
+	bool IsHDROutputActive() const override { return m_HDRActive; }
+	bool IsHDROutputAvailable() const override { return m_HDRAvailable; }
+	float GetHDRDisplayPeakNits() const override { return m_HDRDisplayPeakNits; }
+	nvrhi::IFramebuffer* GetHDRPresentFramebuffer() override
+	{
+		return m_HDRActive ? m_HDRPresentFramebuffers[GetCurrentBackBufferIndex()].Get() : nullptr;
+	}
+	nvrhi::ITexture* GetPresentBackBuffer() override
+	{
+		return m_RhiSwapChainBuffers[GetCurrentBackBufferIndex()];
+	}
 	const char* GetRendererString() const override
 	{
 		return m_RendererString.c_str();
@@ -303,6 +320,28 @@ bool DeviceManager_DX12::CreateDeviceAndSwapChain()
 	*/
 	HRESULT hr = E_FAIL;
 
+	// Use the output containing the game window, not the adapter's first output.
+	HMONITOR monitor = MonitorFromWindow( ( HWND )windowHandle, MONITOR_DEFAULTTONEAREST );
+	for( UINT index = 0; ; ++index )
+	{
+		RefCountPtr<IDXGIOutput> output;
+		if( targetAdapter->EnumOutputs( index, &output ) == DXGI_ERROR_NOT_FOUND ) break;
+		if( !output ) break;
+		RefCountPtr<IDXGIOutput6> output6;
+		DXGI_OUTPUT_DESC1 desc = {};
+		if( SUCCEEDED( output->QueryInterface( IID_PPV_ARGS( &output6 ) ) ) &&
+			SUCCEEDED( output6->GetDesc1( &desc ) ) && desc.Monitor == monitor )
+		{
+			m_HDRAvailable = desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
+			if( desc.MaxLuminance >= 400.f && desc.MaxLuminance <= 4000.f ) m_HDRDisplayPeakNits = desc.MaxLuminance;
+			common->Printf( "HDR display: Windows HDR %s, peak %.0f nits, full frame %.0f nits\n", m_HDRAvailable ? "enabled" : "disabled", desc.MaxLuminance, desc.MaxFullFrameLuminance );
+			break;
+		}
+	}
+	m_HDRActive = r_hdrOutput.GetBool() && m_HDRAvailable;
+	if( m_HDRActive ) m_DeviceParams.swapChainFormat = nvrhi::Format::R10G10B10A2_UNORM;
+	else if( r_hdrOutput.GetBool() ) common->Warning( "Native HDR unavailable on this output; using SDR. Enable Windows HDR and restart." );
+
 	ZeroMemory( &m_SwapChainDesc, sizeof( m_SwapChainDesc ) );
 	m_SwapChainDesc.Width = m_DeviceParams.backBufferWidth;
 	m_SwapChainDesc.Height = m_DeviceParams.backBufferHeight;
@@ -430,6 +469,15 @@ bool DeviceManager_DX12::CreateDeviceAndSwapChain()
 
 	RefCountPtr<IDXGISwapChain1> pSwapChain1;
 	R_DLSSSetDevice( m_Device12 );
+	// Frame Generation must intercept creation, not just Present: it supplies
+	// proxy back buffers and its own presentation queue.
+	IDXGIFactory2* dlssFactory = pDxgiFactory.Detach();
+	R_DLSSUpgradeFactory( reinterpret_cast<void**>( &dlssFactory ) );
+	pDxgiFactory.Attach( dlssFactory );
+	if( R_DLSSFrameGenerationLoaded() )
+	{
+		m_SwapChainDesc.Flags &= ~DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+	}
 	hr = pDxgiFactory->CreateSwapChainForHwnd( m_GraphicsQueue, ( HWND )windowHandle, &m_SwapChainDesc, &m_FullScreenDesc, nullptr, &pSwapChain1 );
 	HR_RETURN( hr );
 	// Let Streamline observe Present for per-frame cleanup without replacing DXGI.
@@ -439,8 +487,30 @@ bool DeviceManager_DX12::CreateDeviceAndSwapChain()
 
 	hr = pSwapChain1->QueryInterface( IID_PPV_ARGS( &m_SwapChain ) );
 	HR_RETURN( hr );
+	if( m_HDRActive )
+	{
+		UINT support = 0;
+		const DXGI_COLOR_SPACE_TYPE colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
+		if( FAILED( m_SwapChain->CheckColorSpaceSupport( colorSpace, &support ) ) ||
+			!( support & DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT ) ||
+			FAILED( m_SwapChain->SetColorSpace1( colorSpace ) ) )
+		{
+			// Restore the normal SDR format as well as its color space, including
+			// the format observed by the Frame Generation swap-chain proxy.
+			m_HDRActive = false;
+			m_HDRAvailable = false;
+			m_SwapChain->SetColorSpace1( DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709 );
+			m_DeviceParams.swapChainFormat = nvrhi::Format::RGBA8_UNORM;
+			m_SwapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			hr = m_SwapChain->ResizeBuffers( m_SwapChainDesc.BufferCount, m_SwapChainDesc.Width,
+				m_SwapChainDesc.Height, m_SwapChainDesc.Format, m_SwapChainDesc.Flags );
+			HR_RETURN( hr );
+			common->Warning( "HDR10 color space unavailable; using SDR output." );
+		}
+		else common->Printf( "Native HDR10 active: RGB10, PQ / BT.2020, peak %.0f nits, paper white %.0f nits\n", GetHDRPeakNits(), GetHDRPaperWhiteNits() );
+	}
 
-	if( r_dxMaxFrameLatency.GetInteger() > 0 )
+	if( r_dxMaxFrameLatency.GetInteger() > 0 && !R_DLSSFrameGenerationLoaded() )
 	{
 		hr = m_SwapChain->SetMaximumFrameLatency( r_dxMaxFrameLatency.GetInteger() );
 		HR_RETURN( hr );
@@ -485,6 +555,7 @@ bool DeviceManager_DX12::CreateDeviceAndSwapChain()
 
 void DeviceManager_DX12::DestroyDeviceAndSwapChain()
 {
+	R_DLSSSuspendFrameGeneration();
 	if( m_NvrhiDevice ) m_NvrhiDevice->waitForIdle();
 	OPTICK_SHUTDOWN();
 
@@ -492,8 +563,6 @@ void DeviceManager_DX12::DestroyDeviceAndSwapChain()
 	m_RendererString.clear();
 
 	ReleaseRenderTargets();
-
-	m_NvrhiDevice = nullptr;
 
 	m_FrameWaitQuery = nullptr;
 
@@ -515,6 +584,7 @@ void DeviceManager_DX12::DestroyDeviceAndSwapChain()
 	m_ComputeQueue = nullptr;
 	m_CopyQueue = nullptr;
 	R_DLSSShutdown();
+	m_NvrhiDevice = nullptr;
 	m_Device12 = nullptr;
 	m_DxgiAdapter = nullptr;
 }
@@ -523,6 +593,11 @@ bool DeviceManager_DX12::CreateRenderTargets()
 {
 	m_SwapChainBuffers.resize( m_SwapChainDesc.BufferCount );
 	m_RhiSwapChainBuffers.resize( m_SwapChainDesc.BufferCount );
+	if( m_HDRActive )
+	{
+		m_HDRCompositionBuffers.resize( m_SwapChainDesc.BufferCount );
+		m_HDRPresentFramebuffers.resize( m_SwapChainDesc.BufferCount );
+	}
 
 	for( UINT n = 0; n < m_SwapChainDesc.BufferCount; n++ )
 	{
@@ -542,6 +617,15 @@ bool DeviceManager_DX12::CreateRenderTargets()
 		textureDesc.keepInitialState = true;
 
 		m_RhiSwapChainBuffers[n] = m_NvrhiDevice->createHandleForNativeTexture( nvrhi::ObjectTypes::D3D12_Resource, nvrhi::Object( m_SwapChainBuffers[n] ), textureDesc );
+		if( m_HDRActive )
+		{
+			m_HDRPresentFramebuffers[n] = m_NvrhiDevice->createFramebuffer( nvrhi::FramebufferDesc().addColorAttachment( m_RhiSwapChainBuffers[n] ) );
+			textureDesc.format = nvrhi::Format::RGBA16_FLOAT;
+			textureDesc.initialState = nvrhi::ResourceStates::RenderTarget;
+			textureDesc.debugName = "HDRComposition";
+			m_HDRCompositionBuffers[n] = m_NvrhiDevice->createTexture( textureDesc );
+			if( !m_HDRPresentFramebuffers[n] || !m_HDRCompositionBuffers[n] ) return false;
+		}
 	}
 
 	return true;
@@ -562,11 +646,14 @@ void DeviceManager_DX12::ReleaseRenderTargets()
 
 	// Release the old buffers because ResizeBuffers requires that
 	m_RhiSwapChainBuffers.clear();
+	m_HDRPresentFramebuffers.clear();
+	m_HDRCompositionBuffers.clear();
 	m_SwapChainBuffers.clear();
 }
 
 void DeviceManager_DX12::ResizeSwapChain()
 {
+	R_DLSSSuspendFrameGeneration();
 	ReleaseRenderTargets();
 
 	if( !m_NvrhiDevice )
@@ -591,6 +678,7 @@ void DeviceManager_DX12::ResizeSwapChain()
 	}
 
 	bool ret = CreateRenderTargets();
+	if( m_HDRActive ) m_SwapChain->SetColorSpace1( DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 );
 	if( !ret )
 	{
 		common->FatalError( "CreateRenderTarget failed" );
@@ -610,14 +698,14 @@ void DeviceManager_DX12::BeginFrame()
 
 nvrhi::ITexture* DeviceManager_DX12::GetCurrentBackBuffer()
 {
-	return m_RhiSwapChainBuffers[m_SwapChain->GetCurrentBackBufferIndex()];
+	return GetBackBuffer( GetCurrentBackBufferIndex() );
 }
 
 nvrhi::ITexture* DeviceManager_DX12::GetBackBuffer( uint32_t index )
 {
 	if( index < m_RhiSwapChainBuffers.size() )
 	{
-		return m_RhiSwapChainBuffers[index];
+		return m_HDRActive ? m_HDRCompositionBuffers[index].Get() : m_RhiSwapChainBuffers[index].Get();
 	}
 	return nullptr;
 }
@@ -657,7 +745,9 @@ void DeviceManager_DX12::Present()
 	OPTICK_TAG( "Frame", idLib::frameNumber - 1 );
 
 	// SRS - Don't change m_DeviceParams.vsyncEnabled here, simply test for vsync mode 2 to set DXGI SyncInterval
+	R_DLSSBeforePresent( m_DeviceParams.backBufferWidth, m_DeviceParams.backBufferHeight );
 	m_SwapChain->Present( m_DeviceParams.vsyncEnabled == 2 ? 1 : 0, presentFlags );
+	R_DLSSAfterPresent();
 
 	if( m_frameLatencyWaitableObject )
 	{
