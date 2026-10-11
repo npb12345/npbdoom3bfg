@@ -9156,21 +9156,14 @@ void idPlayer::UpdateLaserSight()
 			}
 		};
 
-	if (weapon.GetEntity() == NULL)
+	if (!g_laserSight.GetBool() || weapon.GetEntity() == NULL)
 	{
 		HideLaser();
 		return;
 	}
 
-	if (!(usercmd.buttons & BUTTON_ZOOM))
-	{
-		// hide the laser
-			HideLaser();
-			return;
-	}
-
-	// Hide during reload too
-	if (AI_DEAD || weapon->IsHidden() || weapon.GetEntity()->IsReloading())
+	// The laser stays on through hip fire and reloads, but never while lowered.
+	if (AI_DEAD || !weapon->IsFullyRaised())
 	{
 		HideLaser();
 		return;
@@ -9188,21 +9181,8 @@ void idPlayer::UpdateLaserSight()
 
 
 
-	// ---- Trace from camera ----
-	const float maxDist = g_laserSightLength.GetFloat();
-	const idVec3 start = firstPersonViewOrigin;
-	const idVec3 end = start + firstPersonViewAxis[0] * maxDist;
-
-	trace_t tr;
-	gameLocal.clip.TracePoint(tr, start, end, MASK_SHOT_RENDERMODEL, this);
-
-	if (tr.fraction >= 1.0f)
-	{
-		HideLaser();
-		return;
-	}
-
-	// ---- Muzzle origin ----
+	// Use the animated weapon for both position and direction. Mixing a muzzle
+	// position with a camera direction makes the dot slide during weapon sway.
 	idVec3 muzzleOrigin;
 	idMat3 muzzleAxis;
 	if (!weapon->GetMuzzlePositionWithHacks(muzzleOrigin, muzzleAxis))
@@ -9211,69 +9191,47 @@ void idPlayer::UpdateLaserSight()
 		return;
 	}
 
-	// ---- Projected dot light ----
+	// Match the unspread projectile path while concentrating on a shot. Reloads
+	// retain the animated muzzle direction so the laser moves with the weapon.
+	if( weaponSteadyBlend > 0.0f )
+	{
+		idVec3 shotOrigin;
+		idMat3 shotAxis;
+		weapon->GetProjectileLaunchOriginAndAxis( shotOrigin, shotAxis );
+		// Retain a small amount of animated muzzle movement around the shot path.
+		const float alignment = weaponSteadyBlend * 0.90f;
+		muzzleOrigin += ( shotOrigin - muzzleOrigin ) * alignment;
+		muzzleAxis[0] += ( shotAxis[0] - muzzleAxis[0] ) * alignment;
+		muzzleAxis[0].Normalize();
+	}
+
+	laserDotAimSmoothingInit = false;
+	laserDotLastUpdateTime = gameLocal.time;
 	laserDotLight.origin = muzzleOrigin;
-
-	// ---- AIM LAG (smooth the forward direction, rebuild axis) ----
-	const float aimLagMS = weapon->spawnArgs.GetFloat("npb_laserAimLagMS", "0");
-	idMat3 aimAxis = firstPersonViewAxis;
-
-	if (aimLagMS > 0.0f)
+	laserDotLight.axis = muzzleAxis;
+	// Muzzle joints can be rolled relative to the view. Keep their aim direction,
+	// but orient the projected pattern using the camera's up direction.
+	idVec3 laserUp = viewAxis[2] - muzzleAxis[0] * ( viewAxis[2] * muzzleAxis[0] );
+	if( laserUp.Normalize() > 0.001f )
 	{
-		const int now = gameLocal.time;
-		const float dt = MS2SEC(now - laserDotLastUpdateTime);
-		laserDotLastUpdateTime = now;
-
-		const float lagSec = aimLagMS * 0.001f;
-		const float t = (dt > 0.0f) ? idMath::ClampFloat(0.0f, 1.0f, dt / lagSec) : 1.0f;
-
-		const idVec3 desiredFwd = firstPersonViewAxis[0];
-
-		if (!laserDotAimSmoothingInit)
-		{
-			laserDotSmoothedFwd = desiredFwd;
-			laserDotAimSmoothingInit = true;
-		}
-		else
-		{
-			laserDotSmoothedFwd += (desiredFwd - laserDotSmoothedFwd) * t;
-			if (laserDotSmoothedFwd.LengthSqr() > 0.0001f)
-			{
-				laserDotSmoothedFwd.Normalize();
-			}
-			else
-			{
-				laserDotSmoothedFwd = desiredFwd;
-			}
-		}
-
-		// rebuild a stable axis from smoothed forward
-		aimAxis[0] = laserDotSmoothedFwd;
-
-		idVec3 up(0.0f, 0.0f, 1.0f);
-		aimAxis[1] = aimAxis[0].Cross(up);
-		if (aimAxis[1].LengthSqr() < 0.0001f)
-		{
-			up.Set(0.0f, 1.0f, 0.0f);
-			aimAxis[1] = aimAxis[0].Cross(up);
-		}
-		aimAxis[1].Normalize();
-		aimAxis[2] = aimAxis[1].Cross(aimAxis[0]);
-		aimAxis[2].Normalize();
-	}
-	else
-	{
-		laserDotLastUpdateTime = gameLocal.time;
-		laserDotAimSmoothingInit = false;
+		laserDotLight.axis[2] = laserUp;
+		laserDotLight.axis[1] = laserUp.Cross( muzzleAxis[0] );
+		laserDotLight.axis[1].Normalize();
 	}
 
-	laserDotLight.axis = aimAxis;
-
+	const float maxDist = g_laserSightLength.GetFloat();
+	trace_t tr;
+	gameLocal.clip.TracePoint(tr, muzzleOrigin, muzzleOrigin + muzzleAxis[0] * maxDist,
+		MASK_SHOT_RENDERMODEL, this);
+	if (tr.fraction >= 1.0f || tr.fraction * maxDist <= 0.5f)
+	{
+		HideLaser();
+		return;
+	}
 	laserDotLight.pointLight = false;   // projected
 	laserDotLight.parallel = false;
 
 	const float nearDist = 0.5f;
-	const float farDist = g_laserSightLength.GetFloat();
 
 	float halfSize = g_laserSightWidth.GetFloat() * 0.5f;
 
@@ -9283,7 +9241,6 @@ void idPlayer::UpdateLaserSight()
 
 	laserDotLight.target = idVec3(16.0f, 0.0f, 0.0f);
 	laserDotLight.start = idVec3(nearDist, 0.0f, 0.0f);
-	laserDotLight.end = idVec3(farDist, 0.0f, 0.0f);
 
 	laserDotLight.noShadows = true;
 	laserDotLight.noSpecular = false;
@@ -9320,6 +9277,17 @@ void idPlayer::UpdateLaserSight()
 	halfSize = weapon->spawnArgs.GetFloat("npb_laserProjHalf", va("%f", halfSize));
 	laserDotLight.right = idVec3(0.0f, halfSize, 0.0f);
 	laserDotLight.up = idVec3(0.0f, 0.0f, halfSize);
+
+	// On a sloping surface the outer parts of the pattern land farther away
+	// than the center trace. Include the whole square projection on that plane.
+	const float normalForward = idMath::Fabs( tr.c.normal * laserDotLight.axis[0] );
+	const float normalAcross = idMath::Fabs( tr.c.normal * laserDotLight.axis[1] ) +
+		idMath::Fabs( tr.c.normal * laserDotLight.axis[2] );
+	const float planeDenominator = normalForward - idMath::Fabs( halfSize ) / 16.0f * normalAcross;
+	const float hitDistance = tr.fraction * maxDist;
+	const float farDist = planeDenominator > 0.001f ?
+		Min( maxDist, hitDistance * normalForward / planeDenominator + 2.0f ) : maxDist;
+	laserDotLight.end = idVec3( farDist, 0.0f, 0.0f );
 
 	if (laserDotLightHandle == -1)
 	{
@@ -10969,6 +10937,22 @@ void idPlayer::CalculateViewWeaponPos(idVec3& origin, idMat3& axis)
 	angles.pitch += fracsin;
 
 	// decoupled weapon aiming in head mounted displays
+	// Steady the procedural sway while aiming/firing. Leave the animation clock
+	// running so fire, recoil, reload and weapon-state events continue normally.
+	const bool steady = ( usercmd.buttons & ( BUTTON_ZOOM | BUTTON_ATTACK ) ) &&
+		weapon.GetEntity() != NULL && weapon->IsFullyRaised() && !weapon->IsReloading();
+	const float steadyDt = weaponSteadyTime < 0 ? 0.0f :
+		MS2SEC( idMath::ClampInt( 0, 50, gameLocal.time - weaponSteadyTime ) );
+	weaponSteadyTime = gameLocal.time;
+	const float steadyTarget = steady ? 1.0f : 0.0f;
+	const float steadyRate = steady ? 14.0f : 8.0f;
+	weaponSteadyBlend += ( steadyTarget - weaponSteadyBlend ) *
+		( 1.0f - idMath::Exp( -steadyRate * steadyDt ) );
+	const float swayScale = 1.0f - 0.85f * weaponSteadyBlend;
+	const idVec3 steadyOrigin = viewOrigin + gunpos * viewAxis;
+	origin = steadyOrigin + ( origin - steadyOrigin ) * swayScale;
+	angles *= swayScale;
+
 	angles.pitch += independentWeaponPitchAngle;
 
 	const idMat3 anglesMat = angles.ToMat3();

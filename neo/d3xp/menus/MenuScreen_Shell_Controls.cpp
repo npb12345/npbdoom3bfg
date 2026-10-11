@@ -37,7 +37,9 @@ enum contorlsMenuCmds_t
 	CONTROLS_CMD_GAMEPAD,
 	CONTROLS_CMD_GAMEPAD_ENABLED,
 	CONTROLS_CMD_INVERT,
-	CONTROLS_CMD_MOUSE_SENS
+	CONTROLS_CMD_MOUSE_SENS,
+	CONTROLS_CMD_TOGGLE_CROUCH,
+	CONTROLS_CMD_TOGGLE_ZOOM
 };
 
 /*
@@ -116,6 +118,26 @@ void idMenuScreen_Shell_Controls::Initialize( idMenuHandler* data )
 	control->SetDataSource( &controlData, idMenuDataSource_ControlSettings::CONTROLS_FIELD_MOUSE_SENS );
 	control->SetupEvents( 2, options->GetChildren().Num() );
 	control->AddEventAction( WIDGET_EVENT_PRESS ).Set( WIDGET_ACTION_COMMAND, CONTROLS_CMD_MOUSE_SENS );
+	control->RegisterEventObserver( helpWidget );
+	options->AddChild( control );
+
+	control = new( TAG_SWF ) idMenuWidget_ControlButton();
+	control->SetOptionType( OPTION_SLIDER_TOGGLE );
+	control->SetLabel( "Toggle Crouch" );
+	control->SetDescription( "On: press crouch to crouch or stand. Off: hold crouch." );
+	control->SetDataSource( &controlData, idMenuDataSource_ControlSettings::CONTROLS_FIELD_TOGGLE_CROUCH );
+	control->SetupEvents( DEFAULT_REPEAT_TIME, options->GetChildren().Num() );
+	control->AddEventAction( WIDGET_EVENT_PRESS ).Set( WIDGET_ACTION_COMMAND, CONTROLS_CMD_TOGGLE_CROUCH );
+	control->RegisterEventObserver( helpWidget );
+	options->AddChild( control );
+
+	control = new( TAG_SWF ) idMenuWidget_ControlButton();
+	control->SetOptionType( OPTION_SLIDER_TOGGLE );
+	control->SetLabel( "Toggle Aim / Zoom" );
+	control->SetDescription( "On: press aim / zoom to enter or leave aiming. Off: hold aim / zoom." );
+	control->SetDataSource( &controlData, idMenuDataSource_ControlSettings::CONTROLS_FIELD_TOGGLE_ZOOM );
+	control->SetupEvents( DEFAULT_REPEAT_TIME, options->GetChildren().Num() );
+	control->AddEventAction( WIDGET_EVENT_PRESS ).Set( WIDGET_ACTION_COMMAND, CONTROLS_CMD_TOGGLE_ZOOM );
 	control->RegisterEventObserver( helpWidget );
 	options->AddChild( control );
 
@@ -311,6 +333,16 @@ bool idMenuScreen_Shell_Controls::HandleAction( idWidgetAction& action, const id
 					}
 					break;
 				}
+				case CONTROLS_CMD_TOGGLE_CROUCH:
+				case CONTROLS_CMD_TOGGLE_ZOOM:
+				{
+					const int field = parms[0].ToInteger() == CONTROLS_CMD_TOGGLE_CROUCH
+						? idMenuDataSource_ControlSettings::CONTROLS_FIELD_TOGGLE_CROUCH
+						: idMenuDataSource_ControlSettings::CONTROLS_FIELD_TOGGLE_ZOOM;
+					controlData.AdjustField( field, 1 );
+					options->Update();
+					break;
+				}
 			}
 
 			return true;
@@ -369,6 +401,8 @@ void idMenuScreen_Shell_Controls::idMenuDataSource_ControlSettings::LoadData()
 	float mouseSpeed = ( ( in_mouseSpeed.GetFloat() - 0.25f ) / ( 4.0f - 0.25 ) ) * 100.0f;
 	fields[ CONTROLS_FIELD_MOUSE_SENS ].SetFloat( mouseSpeed );
 	fields[ CONTROLS_FIELD_GAMEPAD_ENABLED ].SetBool( in_useJoystick.GetBool() );
+	fields[ CONTROLS_FIELD_TOGGLE_CROUCH ].SetBool( cvarSystem->GetCVarBool( "in_toggleCrouch" ) );
+	fields[ CONTROLS_FIELD_TOGGLE_ZOOM ].SetBool( cvarSystem->GetCVarBool( "in_toggleZoom" ) );
 
 	originalFields = fields;
 }
@@ -385,6 +419,8 @@ void idMenuScreen_Shell_Controls::idMenuDataSource_ControlSettings::CommitData()
 	float mouseSpeed = 0.25f + ( ( 4.0f - 0.25 ) * ( fields[ CONTROLS_FIELD_MOUSE_SENS ].ToFloat() / 100.0f ) );
 	in_mouseSpeed.SetFloat( mouseSpeed );
 	in_useJoystick.SetBool( fields[ CONTROLS_FIELD_GAMEPAD_ENABLED ].ToBool() );
+	cvarSystem->SetCVarBool( "in_toggleCrouch", fields[ CONTROLS_FIELD_TOGGLE_CROUCH ].ToBool() );
+	cvarSystem->SetCVarBool( "in_toggleZoom", fields[ CONTROLS_FIELD_TOGGLE_ZOOM ].ToBool() );
 
 	cvarSystem->SetModifiedFlags( CVAR_ARCHIVE );
 
@@ -399,7 +435,8 @@ idMenuScreen_Shell_Controls::idMenuDataSource_AudioSettings::AdjustField
 */
 void idMenuScreen_Shell_Controls::idMenuDataSource_ControlSettings::AdjustField( const int fieldIndex, const int adjustAmount )
 {
-	if( fieldIndex == CONTROLS_FIELD_INVERT_MOUSE || fieldIndex == CONTROLS_FIELD_GAMEPAD_ENABLED )
+	if( fieldIndex == CONTROLS_FIELD_INVERT_MOUSE || fieldIndex == CONTROLS_FIELD_GAMEPAD_ENABLED ||
+		fieldIndex == CONTROLS_FIELD_TOGGLE_CROUCH || fieldIndex == CONTROLS_FIELD_TOGGLE_ZOOM )
 	{
 		fields[ fieldIndex ].SetBool( !fields[ fieldIndex ].ToBool() );
 	}
@@ -417,6 +454,11 @@ idMenuScreen_Shell_Controls::idMenuDataSource_AudioSettings::IsDataChanged
 */
 bool idMenuScreen_Shell_Controls::idMenuDataSource_ControlSettings::IsDataChanged() const
 {
+	if( fields[ CONTROLS_FIELD_TOGGLE_CROUCH ].ToBool() != originalFields[ CONTROLS_FIELD_TOGGLE_CROUCH ].ToBool() ||
+		fields[ CONTROLS_FIELD_TOGGLE_ZOOM ].ToBool() != originalFields[ CONTROLS_FIELD_TOGGLE_ZOOM ].ToBool() )
+	{
+		return true;
+	}
 
 	if( fields[ CONTROLS_FIELD_INVERT_MOUSE ].ToBool() != originalFields[ CONTROLS_FIELD_INVERT_MOUSE ].ToBool() )
 	{

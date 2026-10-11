@@ -227,6 +227,23 @@ void idMenuHandler_Shell::Update()
 		}
 	}
 
+	// Keep the game at its actual brightness while adjusting graphics settings.
+	// The settings panel stays visible; other pause screens retain their backdrop.
+	if( inGame )
+	{
+		const bool graphicsPreview = activeScreen == SHELL_AREA_SYSTEM_OPTIONS || activeScreen == SHELL_AREA_RESOLUTION;
+		idSWFSpriteInstance* pauseBackground = gui->GetRootObject().GetNestedSprite( "pause_bg" );
+		idSWFSpriteInstance* pauseEdging = gui->GetRootObject().GetNestedSprite( "_fullscreen" );
+		if( pauseBackground != NULL )
+		{
+			pauseBackground->SetVisible( !graphicsPreview );
+		}
+		if( pauseEdging != NULL )
+		{
+			pauseEdging->SetVisible( !graphicsPreview );
+		}
+	}
+
 	idMenuHandler::Update();
 
 	if( activeScreen == nextScreen && activeScreen == SHELL_AREA_LEADERBOARDS )

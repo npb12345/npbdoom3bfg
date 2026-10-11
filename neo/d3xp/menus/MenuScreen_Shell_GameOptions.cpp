@@ -53,7 +53,7 @@ void idMenuScreen_Shell_GameOptions::Initialize( idMenuHandler* data )
 
 	SetSpritePath( "menuGameOptions" );
 
-	options = new( TAG_SWF ) idMenuWidget_DynamicList();
+	options = new( TAG_SWF ) idMenuWidget_SystemOptionsList();
 	options->SetNumVisibleOptions( NUM_GAME_OPTIONS_OPTIONS );
 	options->SetSpritePath( GetSpritePath(), "info", "options" );
 	options->SetWrappingAllowed( true );
@@ -130,6 +130,14 @@ void idMenuScreen_Shell_GameOptions::Initialize( idMenuHandler* data )
 	control->SetOptionType( OPTION_SLIDER_TOGGLE );
 	control->SetLabel( "Muzzle Flashes" );
 	control->SetDataSource( &systemData, idMenuDataSource_GameSettings::GAME_FIELD_MUZZLE_FLASHES );
+	control->SetupEvents( DEFAULT_REPEAT_TIME, options->GetChildren().Num() );
+	control->AddEventAction( WIDGET_EVENT_PRESS ).Set( WIDGET_ACTION_PRESS_FOCUSED, options->GetChildren().Num() );
+	options->AddChild( control );
+
+	control = new( TAG_SWF ) idMenuWidget_ControlButton();
+	control->SetOptionType( OPTION_SLIDER_TEXT );
+	control->SetLabel( "Weapon Sight" );
+	control->SetDataSource( &systemData, idMenuDataSource_GameSettings::GAME_FIELD_SIGHT );
 	control->SetupEvents( DEFAULT_REPEAT_TIME, options->GetChildren().Num() );
 	control->AddEventAction( WIDGET_EVENT_PRESS ).Set( WIDGET_ACTION_PRESS_FOCUSED, options->GetChildren().Num() );
 	options->AddChild( control );
@@ -265,7 +273,7 @@ bool idMenuScreen_Shell_GameOptions::HandleAction( idWidgetAction& action, const
 
 			if( selectionIndex != options->GetFocusIndex() )
 			{
-				options->SetViewIndex( options->GetViewOffset() + selectionIndex );
+				options->SetViewIndex( selectionIndex );
 				options->SetFocusIndex( selectionIndex );
 			}
 
@@ -281,7 +289,7 @@ bool idMenuScreen_Shell_GameOptions::HandleAction( idWidgetAction& action, const
 				int selectionIndex = parms[3].ToInteger();
 				if( selectionIndex != options->GetFocusIndex() )
 				{
-					options->SetViewIndex( options->GetViewOffset() + selectionIndex );
+					options->SetViewIndex( selectionIndex );
 					options->SetFocusIndex( selectionIndex );
 				}
 			}
@@ -330,6 +338,7 @@ void idMenuScreen_Shell_GameOptions::idMenuDataSource_GameSettings::LoadData()
 	fields[ GAME_FIELD_ALWAYS_SPRINT ].SetBool( in_alwaysRun.GetBool() );
 	fields[ GAME_FIELD_CLASSIC_FLASHLIGHT ].SetBool( ng_classicFlashlight.GetBool() );
 	fields[ GAME_FIELD_MUZZLE_FLASHES ].SetBool( g_muzzleFlash.GetBool() );
+	fields[ GAME_FIELD_SIGHT ].SetBool( g_laserSight.GetBool() );
 	originalFields = fields;
 }
 
@@ -351,6 +360,7 @@ void idMenuScreen_Shell_GameOptions::idMenuDataSource_GameSettings::CommitData()
 	in_alwaysRun.SetBool( fields[ GAME_FIELD_ALWAYS_SPRINT ].ToBool() );
 	ng_classicFlashlight.SetBool( fields[ GAME_FIELD_CLASSIC_FLASHLIGHT ].ToBool() );
 	g_muzzleFlash.SetBool( fields[ GAME_FIELD_MUZZLE_FLASHES ].ToBool() );
+	g_laserSight.SetBool( fields[ GAME_FIELD_SIGHT ].ToBool() );
 
 	cvarSystem->SetModifiedFlags( CVAR_ARCHIVE );
 
@@ -382,6 +392,10 @@ idMenuScreen_Shell_GameOptions::idMenuDataSource_AudioSettings::IsDataChanged
 */
 bool idMenuScreen_Shell_GameOptions::idMenuDataSource_GameSettings::IsDataChanged() const
 {
+	if( fields[ GAME_FIELD_SIGHT ].ToBool() != originalFields[ GAME_FIELD_SIGHT ].ToBool() )
+	{
+		return true;
+	}
 
 	if( fields[ GAME_FIELD_FOV ].ToInteger() != originalFields[ GAME_FIELD_FOV ].ToInteger() )
 	{

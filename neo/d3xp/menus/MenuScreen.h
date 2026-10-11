@@ -1020,6 +1020,7 @@ public:
 			GAME_FIELD_ALWAYS_SPRINT,
 			GAME_FIELD_CLASSIC_FLASHLIGHT,
 			GAME_FIELD_MUZZLE_FLASHES,
+			GAME_FIELD_SIGHT,
 			MAX_GAME_FIELDS
 		};
 
@@ -1037,6 +1038,10 @@ public:
 		// retrieves a particular field for reading or updating
 		virtual idSWFScriptVar		GetField( const int fieldIndex ) const
 		{
+			if( fieldIndex == GAME_FIELD_SIGHT )
+			{
+				return fields[ fieldIndex ].ToBool() ? "Laser Sight" : "Classic Crosshair";
+			}
 			return fields[ fieldIndex ];
 		}
 
@@ -1165,6 +1170,8 @@ public:
 			CONTROLS_FIELD_INVERT_MOUSE,
 			CONTROLS_FIELD_GAMEPAD_ENABLED,
 			CONTROLS_FIELD_MOUSE_SENS,
+			CONTROLS_FIELD_TOGGLE_CROUCH,
+			CONTROLS_FIELD_TOGGLE_ZOOM,
 			MAX_CONTROL_FIELDS
 		};
 
@@ -1373,6 +1380,8 @@ public:
 			SYSTEM_FIELD_HDR_OUTPUT,
 			SYSTEM_FIELD_HDR_PEAK,
 			SYSTEM_FIELD_HDR_PAPER_WHITE,
+			SYSTEM_FIELD_HDR_BLOOM,
+			SYSTEM_FIELD_HDR_BLOOM_RADIUS,
 			// RB begin
 			SYSTEM_FIELD_RENDERMODE,
 			SYSTEM_FIELD_AMBIENT_BRIGHTNESS,
@@ -1413,6 +1422,8 @@ public:
 		bool originalHDROutput;
 		float originalHDRPeak;
 		float originalHDRPaperWhite;
+		float originalHDRBloom;
+		float originalHDRBloomRadius;
 		int originalVsync;
 		float originalBrightness;
 		float originalVolume;

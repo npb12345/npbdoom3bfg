@@ -58,6 +58,11 @@ struct BlitParameters
 	BlitSampler sampler = BlitSampler::Linear;
 	float hdrPaperWhiteNits = 0.f; // Nonzero enables Rec.709 working space -> HDR10.
 	float hdrPeakNits = 0.f;
+	nvrhi::ITexture* bloomTexture = nullptr;
+	uint32_t bloomMode = 0; // 1: extract, 2: blur, 3: composite
+	idVec2 bloomDirection = idVec2( 0.f, 0.f );
+	float bloomStrength = 0.f;
+	float bloomThreshold = 1.f;
 	nvrhi::BlendState::RenderTarget blendState;
 	nvrhi::Color blendConstantColor = nvrhi::Color( 0.f );
 };
@@ -73,6 +78,10 @@ struct BlitConstants
 	float   sharpenFactor;
 	float   hdrPaperWhiteNits;
 	float   hdrPeakNits;
+	uint32_t bloomMode;
+	idVec2 bloomDirection;
+	float bloomStrength;
+	float bloomThreshold;
 };
 
 class CommonRenderPasses

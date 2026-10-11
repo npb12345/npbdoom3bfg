@@ -35,6 +35,8 @@ extern DeviceManager* deviceManager;
 extern idCVar r_hdrOutput;
 extern idCVar r_hdrPeakNits;
 extern idCVar r_hdrPaperWhiteNits;
+extern idCVar r_hdrBloom;
+extern idCVar r_hdrBloomRadius;
 
 const static int NUM_SYSTEM_OPTIONS_OPTIONS = 8;
 
@@ -158,6 +160,24 @@ void idMenuScreen_Shell_SystemOptions::Initialize( idMenuHandler* data )
 	control->SetDataSource( &systemData, idMenuDataSource_SystemSettings::SYSTEM_FIELD_HDR_PAPER_WHITE );
 	control->SetupEvents( DEFAULT_REPEAT_TIME, options->GetChildren().Num() );
 	control->AddEventAction( WIDGET_EVENT_PRESS ).Set( WIDGET_ACTION_COMMAND, idMenuDataSource_SystemSettings::SYSTEM_FIELD_HDR_PAPER_WHITE );
+	options->AddChild( control );
+
+	control = new( TAG_SWF ) idMenuWidget_ControlButton();
+	control->SetOptionType( OPTION_SLIDER_TEXT );
+	control->SetLabel( "HDR Bloom" );
+	control->SetDescription( "Glow around bright lights. Requires Native HDR. Zero disables; applies immediately." );
+	control->SetDataSource( &systemData, idMenuDataSource_SystemSettings::SYSTEM_FIELD_HDR_BLOOM );
+	control->SetupEvents( DEFAULT_REPEAT_TIME, options->GetChildren().Num() );
+	control->AddEventAction( WIDGET_EVENT_PRESS ).Set( WIDGET_ACTION_COMMAND, idMenuDataSource_SystemSettings::SYSTEM_FIELD_HDR_BLOOM );
+	options->AddChild( control );
+
+	control = new( TAG_SWF ) idMenuWidget_ControlButton();
+	control->SetOptionType( OPTION_SLIDER_TEXT );
+	control->SetLabel( "HDR Bloom Radius" );
+	control->SetDescription( "Spread of the glow around lights. Applies immediately." );
+	control->SetDataSource( &systemData, idMenuDataSource_SystemSettings::SYSTEM_FIELD_HDR_BLOOM_RADIUS );
+	control->SetupEvents( DEFAULT_REPEAT_TIME, options->GetChildren().Num() );
+	control->AddEventAction( WIDGET_EVENT_PRESS ).Set( WIDGET_ACTION_COMMAND, idMenuDataSource_SystemSettings::SYSTEM_FIELD_HDR_BLOOM_RADIUS );
 	options->AddChild( control );
 
 	control = new( TAG_SWF ) idMenuWidget_ControlButton();
@@ -485,6 +505,8 @@ void idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings::LoadData
 	originalHDROutput = r_hdrOutput.GetBool();
 	originalHDRPeak = r_hdrPeakNits.GetFloat();
 	originalHDRPaperWhite = r_hdrPaperWhiteNits.GetFloat();
+	originalHDRBloom = r_hdrBloom.GetFloat();
+	originalHDRBloomRadius = r_hdrBloomRadius.GetFloat();
 	originalVsync = r_swapInterval.GetInteger();
 	originalBrightness = r_exposure.GetFloat();
 	originalVolume = s_volume_dB.GetFloat();
@@ -683,6 +705,12 @@ void idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings::AdjustFi
 		}
 		case SYSTEM_FIELD_HDR_PAPER_WHITE:
 			r_hdrPaperWhiteNits.SetFloat( idMath::ClampFloat( 80.f, 400.f, r_hdrPaperWhiteNits.GetFloat() + adjustAmount * 10.f ) );
+			break;
+		case SYSTEM_FIELD_HDR_BLOOM:
+			r_hdrBloom.SetFloat( idMath::ClampFloat( 0.f, 1.f, r_hdrBloom.GetFloat() + adjustAmount * 0.05f ) );
+			break;
+		case SYSTEM_FIELD_HDR_BLOOM_RADIUS:
+			r_hdrBloomRadius.SetFloat( idMath::ClampFloat( 0.5f, 3.f, r_hdrBloomRadius.GetFloat() + adjustAmount * 0.25f ) );
 			break;
 		case SYSTEM_FIELD_RENDERMODE:
 		{
@@ -885,6 +913,11 @@ idSWFScriptVar idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings
 			return r_hdrPeakNits.GetFloat() > 0.f ? va( "%.0f nits", r_hdrPeakNits.GetFloat() ) : va( "Auto (%.0f nits)", deviceManager->GetHDRDisplayPeakNits() );
 		case SYSTEM_FIELD_HDR_PAPER_WHITE:
 			return va( "%.0f nits", r_hdrPaperWhiteNits.GetFloat() );
+		case SYSTEM_FIELD_HDR_BLOOM:
+			if( !deviceManager->IsHDROutputActive() ) return "Requires HDR";
+			return r_hdrBloom.GetFloat() < 0.001f ? "Off" : va( "%.0f%%", r_hdrBloom.GetFloat() * 100.f );
+		case SYSTEM_FIELD_HDR_BLOOM_RADIUS:
+			return va( "%.2fx", r_hdrBloomRadius.GetFloat() );
 		case SYSTEM_FIELD_RENDERMODE:
 		{
 			static const int numValues = 10;
@@ -976,6 +1009,7 @@ idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings::IsDataChanged
 */
 bool idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings::IsDataChanged() const
 {
+	if( originalHDRBloom != r_hdrBloom.GetFloat() || originalHDRBloomRadius != r_hdrBloomRadius.GetFloat() ) return true;
 	if( originalHDROutput != r_hdrOutput.GetBool() || originalHDRPeak != r_hdrPeakNits.GetFloat() || originalHDRPaperWhite != r_hdrPaperWhiteNits.GetFloat() ) return true;
 	if( originalFrameGeneration != r_dlssFrameGeneration.GetBool() ) return true;
 	if( idStr::Icmp( r_graphicsAPI.GetString(), originalRenderAPI ) != 0 )

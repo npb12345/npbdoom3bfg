@@ -304,6 +304,8 @@ public:
 	idAngles				cmdAngles;			// player cmd angles
 	float					independentWeaponPitchAngle;	// viewAngles[PITCH} when head tracking is active
 	float					weaponZoomBlend;	// smooth blend for zoomed weapon position
+	float                   weaponSteadyBlend = 0.0f;
+	int                     weaponSteadyTime = -1;
 
 
 

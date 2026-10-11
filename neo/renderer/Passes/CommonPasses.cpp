@@ -170,6 +170,7 @@ void CommonRenderPasses::Init( nvrhi::IDevice* device )
 		{
 			nvrhi::BindingLayoutItem::PushConstants( 0, sizeof( BlitConstants ) ),
 			nvrhi::BindingLayoutItem::Texture_SRV( 0 ),
+			nvrhi::BindingLayoutItem::Texture_SRV( 1 ),
 			nvrhi::BindingLayoutItem::Sampler( 0 )
 		};
 
@@ -283,6 +284,7 @@ void CommonRenderPasses::BlitTexture( nvrhi::ICommandList* commandList, const Bl
 		{
 			nvrhi::BindingSetItem::PushConstants( 0, sizeof( BlitConstants ) ),
 			nvrhi::BindingSetItem::Texture_SRV( 0, params.sourceTexture ).setSubresources( sourceSubresources ).setDimension( sourceDimension ),
+			nvrhi::BindingSetItem::Texture_SRV( 1, params.bloomTexture ? params.bloomTexture : m_BlackTexture.Get() ),
 			nvrhi::BindingSetItem::Sampler( 0, params.sampler == BlitSampler::Point ? m_PointClampSampler : m_LinearClampSampler )
 		};
 	}
@@ -310,6 +312,10 @@ void CommonRenderPasses::BlitTexture( nvrhi::ICommandList* commandList, const Bl
 	BlitConstants blitConstants = {};
 	blitConstants.hdrPaperWhiteNits = params.hdrPaperWhiteNits;
 	blitConstants.hdrPeakNits = params.hdrPeakNits;
+	blitConstants.bloomMode = params.bloomMode;
+	blitConstants.bloomDirection = params.bloomDirection;
+	blitConstants.bloomStrength = params.bloomStrength;
+	blitConstants.bloomThreshold = params.bloomThreshold;
 	blitConstants.sourceOrigin = idVec2( params.sourceBox.x, params.sourceBox.y );
 	blitConstants.sourceSize = idVec2( params.sourceBox.z, params.sourceBox.w );
 	blitConstants.targetOrigin = idVec2( params.targetBox.x, params.targetBox.y );

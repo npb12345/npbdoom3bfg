@@ -190,21 +190,16 @@ material models/items/flashlight/flare {
 }
 
 material models/items/flashlight/beam1 {
+	// Use the beam texture's alpha directly instead of framebuffer alpha.
 	translucent
+	twoSided
+	noShadows
 	deform tube
 	{
-		maskcolor
+		blend gl_src_alpha, gl_one
+		maskalpha
 		map makealpha(models/items/flashlight/beam1.tga)
-		//	scroll	time * 3 , time * 0	
-		forcehighquality	
-	}
-	{
-		blend gl_dst_alpha, gl_one
-	        maskalpha
-		map models/items/flashlight/dust
-		scale	 4 , 4
-		rotate time * -.02
-		scroll	time * .001 , time * .001
+		rgb 0.4
 	}
 }
 
@@ -218,23 +213,16 @@ material models/items/flashlight/flare2 {
 }
 
 material models/items/flashlight/beam2 {
+	// Use the beam texture's alpha directly instead of framebuffer alpha.
 	translucent
+	twoSided
+	noShadows
 	deform tube
 	{
-		maskcolor
+		blend gl_src_alpha, gl_one
+		maskalpha
 		map makealpha(models/items/flashlight/beam1.tga)
-		//	scroll	time * 3 , time * 0	
-		forcehighquality
-	
-	
-	}
-	{
-		blend gl_dst_alpha, gl_one
-	        maskalpha
-		map models/items/flashlight/dust
-		scale	 4 , 4
-		rotate time * -.02
-		scroll	time * .001 , time * .001
+		rgb 0.4
 	}
 }
 

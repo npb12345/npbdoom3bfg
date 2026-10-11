@@ -193,6 +193,7 @@ private:
 
 	// RB: outdated HDR stuff
 	void				Bloom( const viewDef_t* viewDef );
+	void                HDRBloom( const viewDef_t* viewDef );
 
 	void				DrawScreenSpaceAmbientOcclusion( const viewDef_t* _viewDef );
 	void				DrawScreenSpaceAmbientOcclusion2( const viewDef_t* _viewDef );

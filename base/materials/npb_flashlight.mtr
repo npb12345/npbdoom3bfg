@@ -1,0 +1,12 @@
+lights/npb_flashlight_beam
+{
+	translucent
+	twoSided
+	noShadows
+	{
+		blend gl_src_alpha, gl_one
+		maskalpha
+		map textures/npb/flashlight_beam_visible
+		vertexColor
+	}
+}

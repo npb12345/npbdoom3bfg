@@ -34,6 +34,10 @@ struct BlitConstants
 	float   sharpenFactor;
 	float   hdrPaperWhiteNits;
 	float   hdrPeakNits;
+	uint bloomMode;
+	float2 bloomDirection;
+	float bloomStrength;
+	float bloomThreshold;
 };
 
 #endif // BLIT_CB_H

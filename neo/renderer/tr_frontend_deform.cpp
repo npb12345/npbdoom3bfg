@@ -245,6 +245,13 @@ static drawSurf_t* R_TubeDeform( drawSurf_t* surf )
 		}
 
 		// find the vector of the major axis
+		// Widen the existing flashlight cone without moving its endpoints.
+		if( idStr::Icmp( surf->material->GetName(), "models/items/flashlight/beam1" ) == 0 ||
+			idStr::Icmp( surf->material->GetName(), "models/items/flashlight/beam2" ) == 0 )
+		{
+			lengths[0] *= 1.25f;
+			lengths[1] *= 1.25f;
+		}
 		const idVec3 major = mid[1] - mid[0];
 
 		// re-project the points

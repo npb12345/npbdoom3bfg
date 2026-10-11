@@ -42,6 +42,27 @@ Texture2DArray tex : register( t0 );
 Texture2D tex : register( t0 );
 #endif
 SamplerState samp : register( s0 );
+Texture2D bloomTex : register( t1 );
+
+float4 SampleSource( float2 uv )
+{
+#if TEXTURE_ARRAY
+	return tex.SampleLevel( samp, float3( uv, 0 ), 0 );
+#else
+	return tex.SampleLevel( samp, uv, 0 );
+#endif
+}
+
+float3 ExtractBloom( float2 uv )
+{
+	float3 color = pow( max( SampleSource( uv ).rgb, 0.0 ), 2.2 );
+	float brightness = dot( color, float3( 0.2126, 0.7152, 0.0722 ) );
+	float threshold = g_Blit.bloomThreshold;
+	float knee = max( threshold * 0.5, 0.001 );
+	float soft = clamp( brightness - threshold + knee, 0.0, 2.0 * knee );
+	soft = soft * soft / ( 4.0 * knee );
+	return color * ( max( brightness - threshold, soft ) / max( brightness, 0.00001 ) );
+}
 
 struct PS_IN
 {
@@ -59,6 +80,30 @@ void main(
 #else
 	o_rgba = tex.Sample( samp, fragment.uv );
 #endif
+	if( g_Blit.bloomMode == 1 )
+	{
+		// Four taps suppress flicker from small bright sources at quarter res.
+		float2 d = g_Blit.bloomDirection;
+		float3 color = ExtractBloom( fragment.uv + float2( -d.x, -d.y ) );
+		color += ExtractBloom( fragment.uv + float2( d.x, -d.y ) );
+		color += ExtractBloom( fragment.uv + float2( -d.x, d.y ) );
+		color += ExtractBloom( fragment.uv + float2( d.x, d.y ) );
+		o_rgba = float4( color * 0.25, 1.0 );
+	}
+	else if( g_Blit.bloomMode == 2 )
+	{
+		float2 d = g_Blit.bloomDirection;
+		float3 color = SampleSource( fragment.uv ).rgb * 0.227027027;
+		color += ( SampleSource( fragment.uv + d * 1.384615385 ).rgb + SampleSource( fragment.uv - d * 1.384615385 ).rgb ) * 0.316216216;
+		color += ( SampleSource( fragment.uv + d * 3.230769231 ).rgb + SampleSource( fragment.uv - d * 3.230769231 ).rgb ) * 0.070270270;
+		o_rgba = float4( color, 1.0 );
+	}
+	else if( g_Blit.bloomMode == 3 )
+	{
+		float3 linearColor = pow( max( o_rgba.rgb, 0.0 ), 2.2 );
+		linearColor += bloomTex.SampleLevel( samp, fragment.uv, 0 ).rgb * g_Blit.bloomStrength;
+		o_rgba.rgb = pow( max( linearColor, 0.0 ), 1.0 / 2.2 );
+	}
 	if( g_Blit.hdrPaperWhiteNits > 0.0 )
 	{
 		// Legacy GUI blending stays in extended gamma 2.2 space. Decode only

@@ -1532,30 +1532,50 @@ void idWeapon::UpdateFlashPosition()
 	// the flash has an explicit joint for locating it
 	GetGlobalJointTransform(true, flashJointView, muzzleFlash.origin, muzzleFlash.axis);
 
-	if (isPlayerFlashlight)
+	// The BFG world-flashlight mesh used in first person has its beam along
+	// the Flashlight body's +Z axis. Its flash joint is tilted relative to
+	// that axis, so using the joint rotation creates two diverging rays.
+	// Keep the emitter's longitudinal position, but center it on the body
+	// and use the body's animated orientation for the projection.
+	if( isPlayerFlashlight )
 	{
-		// Keep the flashlight steady by NOT adding player view bob or bob angles.
-		// The original joint placement is preserved so the light still renders correctly.
-
-		// Optional tiny tuning offsets if you want them later:
-		// muzzleFlash.origin += muzzleFlash.axis[0] * 0.0f; // forward
-		// muzzleFlash.origin += muzzleFlash.axis[1] * 0.0f; // right
-		// muzzleFlash.origin += muzzleFlash.axis[2] * 0.0f; // up/down
+		const jointHandle_t bodyJoint = animator.GetJointHandle( "Flashlight" );
+		idVec3 bodyOrigin;
+		idMat3 bodyAxis;
+		if( bodyJoint != INVALID_JOINT && GetGlobalJointTransform( true, bodyJoint, bodyOrigin, bodyAxis ) )
+		{
+			const float emitterDistance = ( muzzleFlash.origin - bodyOrigin ) * bodyAxis[2];
+			muzzleFlash.origin = bodyOrigin + emitterDistance * bodyAxis[2];
+			muzzleFlash.axis = bodyAxis;
+		}
 	}
 
-	// if the desired point is inside or very close to a wall, back it up until it is clear
-	idVec3 start = muzzleFlash.origin - playerViewAxis[0] * 16;
-	idVec3 end = muzzleFlash.origin + playerViewAxis[0] * 8;
-	trace_t tr;
-	gameLocal.clip.TracePoint(tr, start, end, MASK_SHOT_RENDERMODEL, owner);
-
-	// be at least 8 units away from a solid
-	muzzleFlash.origin = tr.endpos - playerViewAxis[0] * 8;
-
+	// The BFG flashlight model and its cone are moved together in PresentWeapon.
+	// Other weapons still need the muzzle-flash wall-avoidance offset here.
+	if (!isPlayerFlashlight)
+	{
+		idVec3 start = muzzleFlash.origin - playerViewAxis[0] * 16;
+		idVec3 end = muzzleFlash.origin + playerViewAxis[0] * 8;
+		trace_t tr;
+		gameLocal.clip.TracePoint(tr, start, end, MASK_SHOT_RENDERMODEL, owner);
+		muzzleFlash.origin = tr.endpos - playerViewAxis[0] * 8;
+	}
 	muzzleFlash.noShadows = false; //!g_weaponShadows.GetBool();
 
 	// put the world muzzle flash on the end of the joint, no matter what
 	GetGlobalJointTransform(false, flashJointWorld, worldMuzzleFlash.origin, worldMuzzleFlash.axis);
+	if( isPlayerFlashlight && worldModel.GetEntity() != NULL )
+	{
+		const jointHandle_t bodyJoint = worldModel.GetEntity()->GetAnimator()->GetJointHandle( "Flashlight" );
+		idVec3 bodyOrigin;
+		idMat3 bodyAxis;
+		if( bodyJoint != INVALID_JOINT && GetGlobalJointTransform( false, bodyJoint, bodyOrigin, bodyAxis ) )
+		{
+			const float emitterDistance = ( worldMuzzleFlash.origin - bodyOrigin ) * bodyAxis[2];
+			worldMuzzleFlash.origin = bodyOrigin + emitterDistance * bodyAxis[2];
+			worldMuzzleFlash.axis = bodyAxis;
+		}
+	}
 }
 
 /*
@@ -2047,26 +2067,9 @@ idWeapon::ShowCrosshair
 */
 bool idWeapon::ShowCrosshair() const
 {
-	// Never show during these weapon states
-	if (status == WP_RISING || status == WP_LOWERING || status == WP_HOLSTERED || status == WP_RELOAD)
-	{
-		return false;
-	}
-
-	// Weapon-level opt-out (fists, grenades, etc.)
-	if (weaponDef && weaponDef->dict.GetBool("noZoomCrosshair", "0"))
-	{
-		return false;
-	}
-
-	// Must have a valid owner
-	if (owner == NULL)
-	{
-		return false;
-	}
-
-	// Only show crosshair while zoom is held
-	//return (owner->usercmd.buttons & BUTTON_ZOOM) != 0;
+	// Classic BFG visibility rules, independent of zoom. Laser mode never draws it.
+	return !g_laserSight.GetBool() &&
+		!( status == WP_RISING || status == WP_LOWERING || status == WP_HOLSTERED || status == WP_RELOAD );
 }
 
 /*
@@ -2629,11 +2632,11 @@ void idWeapon::PresentWeapon( bool showViewModel )
 		viewWeaponOrigin = playerViewOrigin;
 		viewWeaponAxis = playerViewAxis;
 
-		fraccos = cos( ( gameLocal.framenum & 255 ) / 127.0f * idMath::PI );
-
-		static unsigned int divisor = 32;
-		unsigned int val = ( gameLocal.framenum + gameLocal.framenum / divisor ) & 255;
-		fraccos2 = cos( val / 127.0f * idMath::PI );
+		// Reduced idle sway, measured in time rather than frames so high
+		// refresh rates cannot speed up the flashlight's motion.
+		const float idlePhase = MS2SEC( gameLocal.time ) * ( 39.0f / 127.0f ) * idMath::PI;
+		fraccos = cos( idlePhase );
+		fraccos2 = cos( idlePhase * ( 33.0f / 32.0f ) );
 
 		static idVec3 baseAdjustPos = idVec3( -8.0f, -20.0f, -10.0f );		// rt, fwd, up
 		static float pscale = 0.5f;
@@ -2693,15 +2696,47 @@ void idWeapon::PresentWeapon( bool showViewModel )
 	UpdateGUI();
 
 	// update animation
+	if( isPlayerFlashlight )
+	{
+		// The beam mesh and projected light both sample this animator.
+		animator.CurrentAnim( ANIMCHANNEL_ALL )->SetPlaybackRate( gameLocal.time, 0.65f );
+		if( worldModel.GetEntity() != NULL )
+		{
+			worldModel.GetEntity()->GetAnimator()->CurrentAnim( ANIMCHANNEL_ALL )->SetPlaybackRate( gameLocal.time, 0.65f );
+		}
+	}
 	UpdateAnimation();
 
+	if (isPlayerFlashlight && flashJointView != INVALID_JOINT)
+	{
+		// Correct the shared model pose after animation, rather than backing up
+		// only the projected light and leaving the model's cone behind.
+		idVec3 lightOrigin;
+		idMat3 lightAxis;
+		if (GetGlobalJointTransform(true, flashJointView, lightOrigin, lightAxis))
+		{
+			trace_t tr;
+			gameLocal.clip.TracePoint(tr, lightOrigin - playerViewAxis[0] * 16,
+				lightOrigin + playerViewAxis[0] * 8, MASK_SHOT_RENDERMODEL, owner);
+			viewWeaponOrigin += tr.endpos - playerViewAxis[0] * 8 - lightOrigin;
+			GetPhysics()->SetOrigin(viewWeaponOrigin);
+			UpdateVisuals();
+		}
+	}
 	// only show the surface in player view
 	renderEntity.allowSurfaceInViewID = owner->entityNumber + 1;
 
 	// crunch the depth range so it never pokes into walls this breaks the machine gun gui
-	renderEntity.weaponDepthHack = g_useWeaponDepthHack.GetBool();
+	// The flashlight cone occupies the world and must use the same depth as its light.
+	renderEntity.weaponDepthHack = !isPlayerFlashlight && g_useWeaponDepthHack.GetBool();
 
 	// present the model
+	// Restore the known-working beam surface, including skins retained by saves.
+	if( isPlayerFlashlight && renderEntity.customSkin &&
+		idStr::Icmp( renderEntity.customSkin->GetName(), "skins/models/weapons/npb_flashlight_on" ) == 0 )
+	{
+		renderEntity.customSkin = declManager->FindSkin( "skins/models/weapons/flashlight_on" );
+	}
 	if( showViewModel )
 	{
 		Present();
@@ -2864,6 +2899,7 @@ void idWeapon::PresentWeapon( bool showViewModel )
 			AlertMonsters();
 		}
 	}
+
 
 	// update the gui light
 	if( guiLight.lightRadius[0] && guiLightJointView != INVALID_JOINT )

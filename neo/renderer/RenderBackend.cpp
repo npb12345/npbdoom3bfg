@@ -47,6 +47,10 @@ If you have questions concerning this license or the applicable additional terms
 idCVar r_useNewSsaoPass( "r_useNewSSAOPass", "1", CVAR_RENDERER | CVAR_BOOL | CVAR_NEW, "use the new SSAO pass from Donut" );
 extern DeviceManager* deviceManager;
 
+idCVar r_hdrBloom( "r_hdrBloom", "0.15", CVAR_RENDERER | CVAR_ARCHIVE | CVAR_FLOAT, "Native HDR bloom strength; 0 disables", 0.f, 1.f );
+idCVar r_hdrBloomRadius( "r_hdrBloomRadius", "1", CVAR_RENDERER | CVAR_ARCHIVE | CVAR_FLOAT, "Native HDR bloom radius", 0.5f, 3.f );
+idCVar r_hdrBloomThreshold( "r_hdrBloomThreshold", "1", CVAR_RENDERER | CVAR_ARCHIVE | CVAR_FLOAT, "Bloom threshold relative to paper white", 0.25f, 4.f );
+
 idCVar r_drawEyeColor( "r_drawEyeColor", "0", CVAR_RENDERER | CVAR_BOOL, "Draw a colored box, red = left eye, blue = right eye, grey = non-stereo" );
 idCVar r_motionBlur( "r_motionBlur", "0", CVAR_RENDERER | CVAR_INTEGER | CVAR_ARCHIVE, "1 - 5, log2 of the number of motion blur samples" );
 idCVar r_forceZPassStencilShadows( "r_forceZPassStencilShadows", "0", CVAR_RENDERER | CVAR_BOOL, "force Z-pass rendering for performance testing" );
@@ -5053,7 +5057,62 @@ idVec2 idRenderBackend::GetCurrentPixelOffset( int frameIndex ) const
 	return idVec2( 0, 0 );
 }
 
-// RB: FIXME currently not used
+void idRenderBackend::HDRBloom( const viewDef_t* view )
+{
+	if( !deviceManager->IsHDROutputActive() || r_skipBloom.GetBool() || r_hdrBloom.GetFloat() <= 0.f ||
+		view->is2Dgui || view->isSubview || view->targetRender || !view->viewEntitys ||
+		( view->renderView.rdflags & RDF_IRRADIANCE ) || r_renderMode.GetInteger() != RENDERMODE_DOOM ) return;
+
+	renderLog.OpenMainBlock( MRB_BLOOM );
+	renderLog.OpenBlock( "HDR Bloom", colorBlue );
+	auto source = globalImages->ldrImage->GetTextureHandle();
+	auto bloom0 = globalImages->bloomRenderImage[0]->GetTextureHandle();
+	auto bloom1 = globalImages->bloomRenderImage[1]->GetTextureHandle();
+	static bool reportedBloom = false;
+	if( !reportedBloom )
+	{
+		common->Printf( "HDR bloom active: %.0f%% strength, %.2fx radius, %ux%u blur buffers\n",
+			r_hdrBloom.GetFloat() * 100.f, r_hdrBloomRadius.GetFloat(), bloom0->getDesc().width, bloom0->getDesc().height );
+		reportedBloom = true;
+	}
+	BlitParameters params;
+	params.sourceTexture = source;
+	params.targetFramebuffer = globalFramebuffers.bloomRenderFBO[0]->GetApiObject();
+	params.bloomMode = 1;
+	params.bloomThreshold = r_hdrBloomThreshold.GetFloat();
+	params.bloomDirection = idVec2( 1.f / source->getDesc().width, 1.f / source->getDesc().height );
+	commonPasses.BlitTexture( commandList, params, &bindingCache );
+
+	params.bloomMode = 2;
+	const float radius = r_hdrBloomRadius.GetFloat() * source->getDesc().height / 1080.f;
+	for( int pass = 0; pass < 2; ++pass )
+	{
+		const float spread = radius * ( pass + 1 );
+		params.sourceTexture = bloom0;
+		params.targetFramebuffer = globalFramebuffers.bloomRenderFBO[1]->GetApiObject();
+		params.bloomDirection = idVec2( spread / bloom0->getDesc().width, 0.f );
+		commonPasses.BlitTexture( commandList, params, &bindingCache );
+		params.sourceTexture = bloom1;
+		params.targetFramebuffer = globalFramebuffers.bloomRenderFBO[0]->GetApiObject();
+		params.bloomDirection = idVec2( 0.f, spread / bloom1->getDesc().height );
+		commonPasses.BlitTexture( commandList, params, &bindingCache );
+	}
+
+	// Composite in linear light into a separate FP16 target, then copy back.
+	// This runs before GUI and the Frame Generation HUD-less capture.
+	params.bloomMode = 3;
+	params.bloomStrength = r_hdrBloom.GetFloat();
+	params.sourceTexture = source;
+	params.bloomTexture = bloom0;
+	params.targetFramebuffer = globalFramebuffers.postProcFBO->GetApiObject();
+	commonPasses.BlitTexture( commandList, params, &bindingCache );
+	commonPasses.BlitTexture( commandList, globalFramebuffers.ldrFBO->GetApiObject(),
+		globalImages->currentRenderImage->GetTextureHandle(), &bindingCache );
+	renderLog.CloseBlock();
+	renderLog.CloseMainBlock();
+}
+
+// Legacy bloom path, retained for reference.
 void idRenderBackend::Bloom( const viewDef_t* _viewDef )
 {
 	if( _viewDef->is2Dgui || ( _viewDef->renderView.rdflags & RDF_IRRADIANCE ) )
@@ -6061,8 +6120,7 @@ void idRenderBackend::DrawViewInternal( const viewDef_t* _viewDef, const int ste
 	// bloom post processing
 	//-------------------------------------------------
 
-	// TODO implement bloom
-	//Bloom( _viewDef );
+	HDRBloom( _viewDef );
 
 	if( _viewDef->renderView.rdflags & RDF_IRRADIANCE )
 	{
