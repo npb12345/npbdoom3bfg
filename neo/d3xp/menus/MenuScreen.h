@@ -1382,6 +1382,7 @@ public:
 			SYSTEM_FIELD_HDR_PAPER_WHITE,
 			SYSTEM_FIELD_HDR_BLOOM,
 			SYSTEM_FIELD_HDR_BLOOM_RADIUS,
+			SYSTEM_FIELD_GRIMDARK,
 			// RB begin
 			SYSTEM_FIELD_RENDERMODE,
 			SYSTEM_FIELD_AMBIENT_BRIGHTNESS,
@@ -1424,6 +1425,7 @@ public:
 		float originalHDRPaperWhite;
 		float originalHDRBloom;
 		float originalHDRBloomRadius;
+		float originalGrimdark;
 		int originalVsync;
 		float originalBrightness;
 		float originalVolume;

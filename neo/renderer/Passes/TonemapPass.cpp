@@ -30,6 +30,11 @@
 
 #include <sys/DeviceManager.h>
 extern DeviceManager* deviceManager;
+idCVar r_bodycamActive( "r_bodycamActive", "0", CVAR_RENDERER | CVAR_BOOL, "Bodycam active for the local player view" );
+idCVar r_bodycamVignetteX( "r_bodycamVignetteX", "0", CVAR_RENDERER | CVAR_FLOAT, "Local bodycam lens offset X" );
+idCVar r_bodycamVignetteY( "r_bodycamVignetteY", "0", CVAR_RENDERER | CVAR_FLOAT, "Local bodycam lens offset Y" );
+idCVar r_grimdark( "r_grimdark", "0.5", CVAR_RENDERER | CVAR_ARCHIVE | CVAR_FLOAT,
+	"Grimdark color grade strength; 0 disables", 0.0f, 1.0f );
 
 TonemapPass::TonemapPass()
 	: isLoaded( false )
@@ -307,6 +312,12 @@ void TonemapPass::Render(
 		bool enableColorLUT = params.enableColorLUT && colorLutSize > 0;
 
 		ToneMappingConstants toneMappingConstants = {};
+		toneMappingConstants.bodycam = r_bodycamActive.GetBool() && viewDef->renderView.viewID > 0 && r_renderMode.GetInteger() == RENDERMODE_DOOM ? 1.f : 0.f;
+		toneMappingConstants.viewOrigin = idVec2i( viewDef->viewport.x1, viewDef->viewport.y1 );
+		toneMappingConstants.viewSize = idVec2i( viewDef->viewport.x2 - viewDef->viewport.x1 + 1, viewDef->viewport.y2 - viewDef->viewport.y1 + 1 );
+		toneMappingConstants.grimdarkStrength = r_renderMode.GetInteger() == RENDERMODE_DOOM ? r_grimdark.GetFloat() : 0.f;
+		toneMappingConstants.grainTime = floorf( viewDef->renderView.time[0] / 33.3333f );
+		toneMappingConstants.bodycamVignette.Set( r_bodycamVignetteX.GetFloat(), r_bodycamVignetteY.GetFloat(), 0.f, 0.f );
 		toneMappingConstants.hdrPeakRatio = deviceManager->IsHDROutputActive() && r_renderMode.GetInteger() == RENDERMODE_DOOM ? deviceManager->GetHDRPeakNits() / deviceManager->GetHDRPaperWhiteNits() : 0.f;
 		toneMappingConstants.exposureScale = ::exp2f( r_exposure.GetFloat() );
 		toneMappingConstants.whitePointInvSquared = 1.f / powf( params.whitePoint, 2.f );

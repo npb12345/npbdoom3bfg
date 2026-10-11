@@ -103,26 +103,35 @@ float3 ApplyColorLUT( float3 color )
 }
 
 
-void main(
-	in float4 pos : SV_Position,
-	in float2 uv : UV,
-	out float4 o_rgba : SV_Target )
+float4 BodycamSample( float2 lensUV )
 {
+	uint width, height;
 #if SOURCE_ARRAY
-	float4 HdrColor = t_Source[uint3( pos.xy, g_ToneMapping.sourceSlice )];
+	uint layers;
+	t_Source.GetDimensions( width, height, layers );
 #else
-	float4 HdrColor = t_Source[pos.xy];
+	t_Source.GetDimensions( width, height );
 #endif
-	o_rgba.rgb = ConvertToLDR( HdrColor.rgb );
-	o_rgba.a = HdrColor.a;
+	float2 pixel = g_ToneMapping.viewOrigin + clamp( lensUV * g_ToneMapping.viewSize,
+		0.5, float2( g_ToneMapping.viewSize ) - 0.5 );
+	float2 sampleUV = pixel / float2( width, height );
+#if SOURCE_ARRAY
+	return t_Source.SampleLevel( s_ColorLUTSampler, float3( sampleUV, g_ToneMapping.sourceSlice ), 0 );
+#else
+	return t_Source.SampleLevel( s_ColorLUTSampler, sampleUV, 0 );
+#endif
+}
 
-	if( g_ToneMapping.hdrPeakRatio > 0.0 )
+float3 BodycamDisplayColor( float3 color )
+{
+ color = ConvertToLDR( color );
+if( g_ToneMapping.hdrPeakRatio > 0.0 )
 	{
 		// Keep the SDR color balance. Extending each channel independently
 		// exaggerates warm lights: red can enter the HDR shoulder while green
 		// and blue are still below paper white. Instead extend luminance and
 		// apply one gain to all channels, including the peak-luminance limit.
-		float3 sceneColor = max( o_rgba.rgb, 0.0 );
+		float3 sceneColor = max( color, 0.0 );
 		float3 baseColor = g_ToneMapping.colorLUTTextureSize.x > 0.0
 			? ApplyColorLUT( sceneColor ) : ACESFilm( sceneColor );
 		float baseLuminance = Luminance( baseColor );
@@ -138,16 +147,116 @@ void main(
 		float gain = ( contrastLuminance + extraLuminance ) / max( baseLuminance, 0.000001 );
 		float maxChannel = max( baseColor.r, max( baseColor.g, baseColor.b ) );
 		gain = min( gain, g_ToneMapping.hdrPeakRatio / max( maxChannel, 0.000001 ) );
-		o_rgba.rgb = baseColor * gain;
+		color = baseColor * gain;
 	}
 	else if( g_ToneMapping.colorLUTTextureSize.x > 0 )
 	{
-		o_rgba.rgb = ApplyColorLUT( o_rgba.rgb );
+		color = ApplyColorLUT( color );
 	}
 	else
 	{
 		// Tonemapping curve is applied after exposure.
-		o_rgba.rgb = ACESFilm( o_rgba.rgb );
+		color = ACESFilm( color );
+	}
+
+	return color;
+}
+float2 BodycamLensUV( float2 uv )
+{
+	float2 centered = uv - 0.5;
+	float gradient = pow( saturate( 1.0 - length( centered ) / 0.75 ), 0.5 );
+	// Limit inward displacement: full strength collapses the center's scale
+	// toward zero and creates extreme magnification instead of a mild lens.
+	return uv - centered * gradient * 0.18;
+}
+float4 BodycamSensorSample( float2 uv )
+{
+	float2 lensUV = BodycamLensUV( uv );
+	float2 edge = uv * 2.0 - 1.0;
+	// Small radial channel separation and horizontal color bleed at the edge.
+	float2 fringe = edge * dot( edge, edge ) * 0.00035;
+	float4 color = BodycamSample( lensUV );
+	color.r = BodycamSample( lensUV + fringe + float2( 0.00025, 0 ) ).r;
+	color.b = BodycamSample( lensUV - fringe - float2( 0.00025, 0 ) ).b;
+	return color;
+}
+float3 BodycamDisplaySample( float2 uv )
+{
+	return BodycamDisplayColor( BodycamSensorSample( uv ).rgb );
+}
+void main(
+	in float4 pos : SV_Position,
+	in float2 uv : UV,
+	out float4 o_rgba : SV_Target )
+{
+#if SOURCE_ARRAY
+	float4 HdrColor = t_Source[uint3( pos.xy, g_ToneMapping.sourceSlice )];
+#else
+	float4 HdrColor = t_Source[pos.xy];
+#endif
+	if( g_ToneMapping.bodycam > 0.0 )
+	{
+		HdrColor = BodycamSensorSample( uv );
+	}
+
+	o_rgba.a = HdrColor.a;
+
+	o_rgba.rgb = BodycamDisplayColor( HdrColor.rgb );
+	// Grade scene color before display encoding, leaving HDR headroom intact.
+	// No lens distortion, channel offsets, or chromatic aberration.
+	float strength = saturate( g_ToneMapping.grimdarkStrength );
+	if( strength > 0.0 )
+	{
+		float3 original = max( o_rgba.rgb, 0.0 );
+		float luminance = Luminance( original );
+		float redAccent = saturate( ( original.r - max( original.g, original.b ) ) / max( luminance, 0.001 ) );
+		float brightAccent = smoothstep( 0.5, 1.5, luminance );
+		float saturation = lerp( 0.32, 0.88, max( redAccent, brightAccent ) );
+		if( g_ToneMapping.bodycam > 0.0 ) saturation = lerp( saturation, 1.0, 0.5 );
+		float3 graded = lerp( luminance.xxx, original, saturation );
+		float shadow = 1.0 - smoothstep( 0.03, 0.45, luminance );
+		graded *= lerp( float3( 1.025, 0.97, 0.92 ), float3( 0.68, 0.82, 1.0 ), shadow );
+		// A gentle toe, without clipping blacks or flattening HDR highlights.
+		graded *= lerp( 0.42, 1.02, smoothstep( 0.0, 1.0, luminance ) );
+		float2 edge = uv * 2.0 - 1.0;
+		float vignette = smoothstep( 0.25, 1.8, dot( edge, edge ) );
+		graded *= 1.0 - 0.34 * vignette;
+		float grain = frac( sin( dot( floor( pos.xy ), float2( 12.9898, 78.233 ) ) +
+			g_ToneMapping.grainTime * 37.719 ) * 43758.5453 ) - 0.5;
+		graded *= 1.0 + grain * 0.24 * ( 1.0 - brightAccent );
+		float peak = g_ToneMapping.hdrPeakRatio > 0.0 ? g_ToneMapping.hdrPeakRatio : 1.0;
+		float maxChannel = max( graded.r, max( graded.g, graded.b ) );
+		graded *= min( 1.0, peak / max( maxChannel, 0.000001 ) );
+		o_rgba.rgb = lerp( original, graded, strength );
+	}
+
+	if( g_ToneMapping.bodycam > 0.0 )
+	{
+		float3 cameraColor = max( o_rgba.rgb, 0.0 );
+		float3 center = BodycamDisplaySample( uv );
+		float3 average = ( BodycamDisplaySample( uv + float2( 0.001, 0 ) ) +
+			BodycamDisplaySample( uv - float2( 0.001, 0 ) ) +
+			BodycamDisplaySample( uv + float2( 0, 0.001 ) ) +
+			BodycamDisplaySample( uv - float2( 0, 0.001 ) ) ) * 0.25;
+		// Gentler detail enhancement, with a little lens softness in the color.
+		cameraColor = max( cameraColor + ( average - center ) * 0.15 +
+			dot( center - average, float3( 0.3, 0.59, 0.11 ) ) * 2.0, 0.0 );
+		// Restrained video texture: fine sensor noise, faint scanlines and
+		// low-level line-to-line exposure variation. Keep black at zero.
+		float frame = g_ToneMapping.grainTime;
+		float noise = frac( sin( dot( floor( pos.xy ), float2( 12.9898, 78.233 ) ) + frame * 17.13 ) * 43758.5453 ) - 0.5;
+		float lineNoise = frac( sin( floor( uv.y * 720.0 ) * 19.17 + frame * 0.73 ) * 13758.5453 ) - 0.5;
+		float scanline = 0.5 + 0.5 * sin( uv.y * 720.0 * 6.2831853 );
+		cameraColor *= ( 1.0 + noise * 0.06 + lineNoise * 0.025 ) * ( 1.0 - scanline * 0.025 );
+		// Use the viewport aspect so the lens border stays circular on ultrawide.
+		float aspect = float( g_ToneMapping.viewSize.x ) / max( float( g_ToneMapping.viewSize.y ), 1.0 );
+		float d = length( ( uv - 0.5 ) * float2( aspect, 1.0 ) - g_ToneMapping.bodycamVignette.xy );
+		float lensMask = 1.0 - smoothstep( 0.76, 0.82, d );
+		// A black lens housing, without the reference material's gray fill.
+		cameraColor *= lensMask;
+		float peak = g_ToneMapping.hdrPeakRatio > 0.0 ? g_ToneMapping.hdrPeakRatio : 1.0;
+		cameraColor *= min( 1.0, peak / max( max( cameraColor.r, max( cameraColor.g, cameraColor.b ) ), 0.000001 ) );
+		o_rgba.rgb = cameraColor;
 	}
 
 	// Gamma correction since we are not rendering to an sRGB render target.

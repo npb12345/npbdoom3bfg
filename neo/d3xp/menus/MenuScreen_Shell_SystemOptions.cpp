@@ -37,6 +37,7 @@ extern idCVar r_hdrPeakNits;
 extern idCVar r_hdrPaperWhiteNits;
 extern idCVar r_hdrBloom;
 extern idCVar r_hdrBloomRadius;
+extern idCVar r_grimdark;
 
 const static int NUM_SYSTEM_OPTIONS_OPTIONS = 8;
 
@@ -178,6 +179,15 @@ void idMenuScreen_Shell_SystemOptions::Initialize( idMenuHandler* data )
 	control->SetDataSource( &systemData, idMenuDataSource_SystemSettings::SYSTEM_FIELD_HDR_BLOOM_RADIUS );
 	control->SetupEvents( DEFAULT_REPEAT_TIME, options->GetChildren().Num() );
 	control->AddEventAction( WIDGET_EVENT_PRESS ).Set( WIDGET_ACTION_COMMAND, idMenuDataSource_SystemSettings::SYSTEM_FIELD_HDR_BLOOM_RADIUS );
+	options->AddChild( control );
+
+	control = new( TAG_SWF ) idMenuWidget_ControlButton();
+	control->SetOptionType( OPTION_SLIDER_TEXT );
+	control->SetLabel( "Grimdark" );
+	control->SetDescription( "Cooler shadows, restrained color, contrast, subtle grain and vignette. Doom 3 render mode; applies immediately. Zero disables." );
+	control->SetDataSource( &systemData, idMenuDataSource_SystemSettings::SYSTEM_FIELD_GRIMDARK );
+	control->SetupEvents( DEFAULT_REPEAT_TIME, options->GetChildren().Num() );
+	control->AddEventAction( WIDGET_EVENT_PRESS ).Set( WIDGET_ACTION_COMMAND, idMenuDataSource_SystemSettings::SYSTEM_FIELD_GRIMDARK );
 	options->AddChild( control );
 
 	control = new( TAG_SWF ) idMenuWidget_ControlButton();
@@ -507,6 +517,7 @@ void idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings::LoadData
 	originalHDRPaperWhite = r_hdrPaperWhiteNits.GetFloat();
 	originalHDRBloom = r_hdrBloom.GetFloat();
 	originalHDRBloomRadius = r_hdrBloomRadius.GetFloat();
+	originalGrimdark = r_grimdark.GetFloat();
 	originalVsync = r_swapInterval.GetInteger();
 	originalBrightness = r_exposure.GetFloat();
 	originalVolume = s_volume_dB.GetFloat();
@@ -711,6 +722,9 @@ void idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings::AdjustFi
 			break;
 		case SYSTEM_FIELD_HDR_BLOOM_RADIUS:
 			r_hdrBloomRadius.SetFloat( idMath::ClampFloat( 0.5f, 3.f, r_hdrBloomRadius.GetFloat() + adjustAmount * 0.25f ) );
+			break;
+		case SYSTEM_FIELD_GRIMDARK:
+			r_grimdark.SetFloat( idMath::ClampFloat( 0.f, 1.f, r_grimdark.GetFloat() + adjustAmount * 0.1f ) );
 			break;
 		case SYSTEM_FIELD_RENDERMODE:
 		{
@@ -918,6 +932,8 @@ idSWFScriptVar idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings
 			return r_hdrBloom.GetFloat() < 0.001f ? "Off" : va( "%.0f%%", r_hdrBloom.GetFloat() * 100.f );
 		case SYSTEM_FIELD_HDR_BLOOM_RADIUS:
 			return va( "%.2fx", r_hdrBloomRadius.GetFloat() );
+		case SYSTEM_FIELD_GRIMDARK:
+			return r_grimdark.GetFloat() < 0.001f ? "Off" : va( "%.0f%%", r_grimdark.GetFloat() * 100.f );
 		case SYSTEM_FIELD_RENDERMODE:
 		{
 			static const int numValues = 10;
@@ -1010,6 +1026,7 @@ idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings::IsDataChanged
 bool idMenuScreen_Shell_SystemOptions::idMenuDataSource_SystemSettings::IsDataChanged() const
 {
 	if( originalHDRBloom != r_hdrBloom.GetFloat() || originalHDRBloomRadius != r_hdrBloomRadius.GetFloat() ) return true;
+	if( originalGrimdark != r_grimdark.GetFloat() ) return true;
 	if( originalHDROutput != r_hdrOutput.GetBool() || originalHDRPeak != r_hdrPeakNits.GetFloat() || originalHDRPaperWhite != r_hdrPaperWhiteNits.GetFloat() ) return true;
 	if( originalFrameGeneration != r_dlssFrameGeneration.GetBool() ) return true;
 	if( idStr::Icmp( r_graphicsAPI.GetString(), originalRenderAPI ) != 0 )

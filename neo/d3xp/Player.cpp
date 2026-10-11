@@ -928,6 +928,7 @@ bool idInventory::Give( idPlayer* owner, const idDict& spawnArgs, const char* st
 			if( amount )
 			{
 				armor += amount;
+				if( amount > 0 ) owner->spawnArgs.SetBool( "npb_bodycam_unlocked", true );
 				if( armor > maxarmor )
 				{
 					armor = maxarmor;
@@ -1768,6 +1769,7 @@ void idPlayer::Init()
 	weaponIdleTime = gameLocal.time;
 	weaponIdleLowered = false;
 	walkToggled = false;
+	 bodycamMotionTime = -1;
 
 	oldButtons				= 0;
 	oldImpulseSequence		= 0;
@@ -2653,6 +2655,7 @@ void idPlayer::Restore( idRestoreGame* savefile )
 {
 	// Input toggles reset on loading; retain compatibility with existing saves.
 	walkToggled = false;
+	 bodycamMotionTime = -1;
 	// Hold gestures are transient and must not survive loading a save.
 	reloadHoldStart = -1;
 	reloadHoldConsumed = false;
@@ -3337,6 +3340,8 @@ void idPlayer::SavePersistantInfo()
 	playerInfo.SetInt( "health", health );
 	playerInfo.SetInt( "current_weapon", currentWeapon );
 	playerInfo.SetInt( "playedTime", playedTimeSecs );
+	playerInfo.SetBool( "npb_bodycam_unlocked", spawnArgs.GetBool( "npb_bodycam_unlocked" ) || inventory.armor > 0 );
+	playerInfo.SetBool( "npb_bodycam_on", spawnArgs.GetBool( "npb_bodycam_on" ) );
 
 	achievementManager.SavePersistentData( playerInfo );
 }
@@ -7938,6 +7943,14 @@ void idPlayer::PerformImpulse( int impulse )
 		case IMPULSE_24:
 			walkToggled = !walkToggled;
 			break;
+		case 23: // Armor-mounted bodycam toggle (_impulse23).
+			if( health > 0 && !spectating && !gameLocal.inCinematic &&
+				( spawnArgs.GetBool( "npb_bodycam_unlocked" ) || inventory.armor > 0 ) )
+			{
+				spawnArgs.SetBool( "npb_bodycam_unlocked", true );
+				spawnArgs.SetBool( "npb_bodycam_on", !spawnArgs.GetBool( "npb_bodycam_on" ) );
+			}
+			break;
 		case IMPULSE_13:
 		{
 			// Held bindings are handled in Weapon_Combat; retain console impulses.
@@ -11205,8 +11218,38 @@ idPlayer::CalculateRenderView
 create the renderView for the current tic
 ==================
 */
+// Smooth gradient noise for the reference body's Perlin shake profiles.
+// Independent channels avoid a repeating, synchronized head-bob rhythm.
+static float BodycamMotionNoise( float time, unsigned int seed )
+{
+	const int cell = idMath::Floor( time );
+	const float t = time - cell;
+	unsigned int a = ( unsigned int )cell * 1664525u + seed * 1013904223u;
+	unsigned int b = ( unsigned int )( cell + 1 ) * 1664525u + seed * 1013904223u;
+	a ^= a >> 16; a *= 2246822519u; a ^= a >> 13;
+	b ^= b >> 16; b *= 2246822519u; b ^= b >> 13;
+	const float ga = ( a & 65535u ) / 32767.5f - 1.0f;
+	const float gb = ( b & 65535u ) / 32767.5f - 1.0f;
+	const float fade = t * t * t * ( t * ( t * 6.0f - 15.0f ) + 10.0f );
+	return 2.0f * ( ga * t + ( gb * ( t - 1.0f ) - ga * t ) * fade );
+}
+
 void idPlayer::CalculateRenderView()
 {
+	// Store progression in the saved entity dictionary, without changing save layout.
+	if( inventory.armor > 0 ) spawnArgs.SetBool( "npb_bodycam_unlocked", true );
+	const bool bodycam = spawnArgs.GetBool( "npb_bodycam_unlocked" ) &&
+		spawnArgs.GetBool( "npb_bodycam_on" ) && health > 0 && !spectating &&
+		!gameLocal.inCinematic && !gameLocal.GetCamera() && !privateCameraView && !pm_thirdPerson.GetBool();
+	extern idCVar r_bodycamActive;
+	extern idCVar r_bodycamVignetteX;
+	extern idCVar r_bodycamVignetteY;
+	if( IsLocallyControlled() )
+	{
+		r_bodycamVignetteX.SetFloat( 0.0f );
+		r_bodycamVignetteY.SetFloat( 0.0f );
+	}
+	if( IsLocallyControlled() ) r_bodycamActive.SetBool( bodycam );
 	int i;
 	float range;
 
@@ -11274,7 +11317,83 @@ void idPlayer::CalculateRenderView()
 			renderView->viewID = entityNumber + 1;
 		}
 
-		gameLocal.CalcFov( CalcFov( true ), renderView->fov_x, renderView->fov_y );
+		if( bodycam && !g_stopTime.GetBool() && !pm_thirdPersonDeath.GetBool() )
+		{
+			// Idle, walk, run, sprint: amplitudes/frequencies from the UE assets.
+			static const float locationAmplitude[4][3] = { { .6f,.6f,.6f }, { 1.1f,1.1f,1.1f }, { 1,1,.5f }, { .7f,.7f,.35f } };
+			static const float locationFrequency[4][3] = { { .6f,.6f,.6f }, { 1.1f,1.1f,1.1f }, { 1,1,5 }, { .7f,.7f,3.5f } };
+			static const float rotationAmplitude[4][3] = { { 0,0,0 }, { .35f,.5f,.5f }, { 1.35f,.27f,1.8f }, { 2.8f,.35f,.7f } };
+			static const float rotationFrequency[4][3] = { { 1,1,1 }, { .1f,.3f,.3f }, { 2,1.5f,1.5f }, { 4.2f,5.6f,2.1f } };
+			const bool aiming = ( usercmd.buttons & BUTTON_ZOOM ) != 0;
+			const bool moving = physicsObj.GetLinearVelocity().LengthSqr() > 25.0f;
+			const int profile = !moving ? 0 : ( walkToggled || aiming || AI_CROUCH ) ? 1 : ( usercmd.buttons & BUTTON_RUN ) ? 3 : 2;
+			const idAngles target = renderView->viewaxis.ToAngles();
+			const int elapsed = gameLocal.time - bodycamMotionTime;
+			if( bodycamMotionTime < 0 || elapsed < 0 || elapsed > 250 )
+			{
+				bodycamLagAngles = target;
+				bodycamVignetteOffset.Zero();
+				bodycamAimBlend = aiming ? 1.0f : 0.0f;
+				for( int p = 0; p < 4; ++p ) bodycamMotionWeights[p] = p == profile ? 1.0f : 0.0f;
+			}
+			const float dt = MS2SEC( idMath::ClampInt( 0, 50, elapsed ) );
+			bodycamMotionTime = gameLocal.time;
+			bodycamAimBlend += ( ( aiming ? 1.0f : 0.0f ) - bodycamAimBlend ) * ( 1.0f - idMath::Exp( -12.0f * dt ) );
+			for( float remaining = dt; remaining > 0.0f; )
+			{
+				const float step = Min( remaining, 1.0f / 60.0f );
+				for( int axis = 0; axis < 3; ++axis ) bodycamLagAngles[axis] += idMath::AngleNormalize180( target[axis] - bodycamLagAngles[axis] ) * Min( step * 18.0f, 1.0f );
+				remaining -= step;
+			}
+			idVec3 offset( 0, 0, 0 );
+			idAngles shake( 0, 0, 0 );
+			const float time = MS2SEC( gameLocal.time );
+			const float motionScale = 1.0f - .85f * bodycamAimBlend;
+			for( int p = 0; p < 4; ++p )
+			{
+				bodycamMotionWeights[p] += ( ( p == profile ? 1.0f : 0.0f ) - bodycamMotionWeights[p] ) * ( 1.0f - idMath::Exp( -5.0f * dt ) );
+				for( int axis = 0; axis < 3; ++axis )
+				{
+					// UE centimeters to Doom's inch-sized world units.
+					offset[axis] += BodycamMotionNoise( time * locationFrequency[p][axis] + 17.3f * axis, 11 + axis ) * locationAmplitude[p][axis] * bodycamMotionWeights[p] * motionScale / 2.54f;
+					shake[axis] += BodycamMotionNoise( time * rotationFrequency[p][axis] + 29.7f * axis, 31 + axis ) * rotationAmplitude[p][axis] * bodycamMotionWeights[p] * motionScale;
+				}
+			}
+			idAngles cameraAngles = target;
+			// Let the lens border follow turning inertia, with independent smooth
+			// noise while moving. Offsets are in viewport-height units.
+			idVec2 vignetteTarget(
+				idMath::ClampFloat( -0.035f, 0.035f, idMath::AngleNormalize180( bodycamLagAngles.yaw - target.yaw ) * 0.003f ),
+				idMath::ClampFloat( -0.025f, 0.025f, idMath::AngleNormalize180( bodycamLagAngles.pitch - target.pitch ) * 0.003f ) );
+			if( moving )
+			{
+				vignetteTarget.x += BodycamMotionNoise( time * 3.0f + 11.3f, 71 ) * 0.012f;
+				vignetteTarget.y += BodycamMotionNoise( time * 3.0f + 37.1f, 83 ) * 0.012f;
+			}
+			vignetteTarget *= motionScale;
+			bodycamVignetteOffset += ( vignetteTarget - bodycamVignetteOffset ) * ( 1.0f - idMath::Exp( -10.0f * dt ) );
+			if( IsLocallyControlled() )
+			{
+				r_bodycamVignetteX.SetFloat( bodycamVignetteOffset.x );
+				r_bodycamVignetteY.SetFloat( bodycamVignetteOffset.y );
+			}
+			for( int axis = 0; axis < 3; ++axis ) cameraAngles[axis] += idMath::AngleNormalize180( bodycamLagAngles[axis] - target[axis] ) * motionScale + shake[axis];
+			const idVec3 desiredOrigin = renderView->vieworg + offset * renderView->viewaxis;
+			trace_t cameraTrace;
+			gameLocal.clip.TraceBounds( cameraTrace, renderView->vieworg, desiredOrigin, idBounds( idVec3( -1,-1,-1 ), idVec3( 1,1,1 ) ), MASK_SOLID, this );
+			renderView->vieworg = cameraTrace.endpos;
+			renderView->viewaxis = cameraAngles.ToMat3();
+		}
+		else
+		{
+			bodycamMotionTime = -1;
+		}
+		// Bodycam keeps its wide lens while aiming, including zoom transitions.
+		// Aim input still drives weapon positioning and motion stabilization.
+		const float bodycamFov = bodycam ? 12.0f : 0.0f;
+		const float baseFov = bodycam ? DefaultFov() : CalcFov( true );
+		gameLocal.CalcFov( bodycamFov > 0.0f ? Max( baseFov, Min( 130.0f, baseFov + bodycamFov ) ) : baseFov,
+			renderView->fov_x, renderView->fov_y );
 	}
 
 	if( renderView->fov_y == 0 )

@@ -45,5 +45,8 @@ struct ToneMappingConstants
 	idVec2 colorLUTTextureSize;
 	idVec2 colorLUTTextureSizeInv;
 	float hdrPeakRatio;
-	float hdrPadding[3];
+	float grimdarkStrength;
+	float grainTime;
+	float bodycam;
+	idVec4 bodycamVignette;
 };

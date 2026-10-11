@@ -48,6 +48,7 @@ static bindInfo_t keyboardBinds[] =
 	{ "#str_02107",	"_right"								},	// TURN RIGHT
 	{ "Sprint",	"_speed"								},	// SPRINT
 	{ "Toggle Walk", "_impulse24" },
+	{ "Toggle Bodycam", "_impulse23" },
 
 	{ "#str_02095",			""								},	// HEADING
 	{ "#str_02112",	"_attack"								},	// ATTACK

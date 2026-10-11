@@ -46,7 +46,10 @@ struct ToneMappingConstants
 	float2 colorLUTTextureSize;
 	float2 colorLUTTextureSizeInv;
 	float hdrPeakRatio;
-	float3 hdrPadding;
+	float grimdarkStrength;
+	float grainTime;
+	float bodycam;
+	float4 bodycamVignette;
 };
 
 #endif // DEPTH_CB_H
