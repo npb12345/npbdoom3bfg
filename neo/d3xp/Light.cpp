@@ -380,6 +380,13 @@ void idLight::Restore( idRestoreGame* savefile )
 
 	lightDefHandle = -1;
 
+	// Restore the original material after the unsuccessful diagnostic swap.
+	// Keep geometry, radius, motion and shadow settings unchanged.
+	if( name == "fly_around2_light" && strstr( gameLocal.GetMapName(), "mc_underground" ) )
+	{
+		renderLight.shader = declManager->FindMaterial( spawnArgs.GetString( "texture", "lights/squarelight1" ), false );
+	}
+
 	SetLightLevel();
 }
 
@@ -396,6 +403,10 @@ void idLight::Spawn()
 
 	// do the parsing the same way dmap and the editor do
 	gameEdit->ParseSpawnArgsToRenderLight( &spawnArgs, &renderLight );
+	if( name == "fly_around2_light" && strstr( gameLocal.GetMapName(), "mc_underground" ) )
+	{
+		renderLight.shader = declManager->FindMaterial( spawnArgs.GetString( "texture", "lights/squarelight1" ), false );
+	}
 // jmarshall: Store the original light radius for the light style.
 	lightStyleBase = renderLight.lightRadius;
 // jmarshall end

@@ -11029,6 +11029,9 @@ void idPlayer::CalculateViewWeaponPos(idVec3& origin, idMat3& axis)
 			weaponZoomBlend = 0.0f;
 		}
 	}
+	// Translate the complete view weapon (including its arm mesh) during ADS
+	// instead of lifting the bodycam back to eye height.
+	origin += bodycamWeaponOffset;
 }
 
 
@@ -11236,6 +11239,7 @@ static float BodycamMotionNoise( float time, unsigned int seed )
 
 void idPlayer::CalculateRenderView()
 {
+	bodycamWeaponOffset.Zero();
 	// Store progression in the saved entity dictionary, without changing save layout.
 	if( inventory.armor > 0 ) spawnArgs.SetBool( "npb_bodycam_unlocked", true );
 	const bool bodycam = spawnArgs.GetBool( "npb_bodycam_unlocked" ) &&
@@ -11370,7 +11374,7 @@ void idPlayer::CalculateRenderView()
 				vignetteTarget.x += BodycamMotionNoise( time * 3.0f + 11.3f, 71 ) * 0.012f;
 				vignetteTarget.y += BodycamMotionNoise( time * 3.0f + 37.1f, 83 ) * 0.012f;
 			}
-			vignetteTarget *= motionScale;
+			vignetteTarget *= motionScale * 1.25f;
 			bodycamVignetteOffset += ( vignetteTarget - bodycamVignetteOffset ) * ( 1.0f - idMath::Exp( -10.0f * dt ) );
 			if( IsLocallyControlled() )
 			{
@@ -11378,10 +11382,13 @@ void idPlayer::CalculateRenderView()
 				r_bodycamVignetteY.SetFloat( bodycamVignetteOffset.y );
 			}
 			for( int axis = 0; axis < 3; ++axis ) cameraAngles[axis] += idMath::AngleNormalize180( bodycamLagAngles[axis] - target[axis] ) * motionScale + shake[axis];
-			const idVec3 desiredOrigin = renderView->vieworg + offset * renderView->viewaxis;
+			// Keep the mount fixed through ADS. Move the view weapon instead.
+			const idVec3 mountOffset( 0.0f, -1.0f, -3.0f );
+			const idVec3 desiredOrigin = renderView->vieworg + ( offset + mountOffset ) * renderView->viewaxis;
 			trace_t cameraTrace;
 			gameLocal.clip.TraceBounds( cameraTrace, renderView->vieworg, desiredOrigin, idBounds( idVec3( -1,-1,-1 ), idVec3( 1,1,1 ) ), MASK_SOLID, this );
 			renderView->vieworg = cameraTrace.endpos;
+			bodycamWeaponOffset = ( mountOffset * renderView->viewaxis ) * cameraTrace.fraction * bodycamAimBlend;
 			renderView->viewaxis = cameraAngles.ToMat3();
 		}
 		else

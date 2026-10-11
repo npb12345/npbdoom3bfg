@@ -405,6 +405,12 @@ void main( PS_IN fragment, out PS_OUT result )
 		float2 shadowTexcoordAtlas = shadowTexcoord.xy * pc.rpJitterTexScale.y + pc.rpShadowAtlasOffsets[ shadowIndex ].xy;
 
 		float2 shadowTexcoordJittered = shadowTexcoordAtlas + jitter * shadowTexelSize;
+		// Atlas tiles belong to independent lights/cube faces. Keep the entire
+		// bilinear comparison footprint inside this tile, including PCF jitter.
+		float2 tileMin = pc.rpShadowAtlasOffsets[ shadowIndex ].xy;
+		float halfTexel = 0.5 * pc.rpScreenCorrectionFactor.z;
+		shadowTexcoordJittered = clamp( shadowTexcoordJittered,
+			tileMin + halfTexel, tileMin + pc.rpJitterTexScale.y - halfTexel );
 
 		shadow += t_ShadowAtlas.SampleCmpLevelZero( s_Shadow, shadowTexcoordJittered.xy, receiver );
 #else

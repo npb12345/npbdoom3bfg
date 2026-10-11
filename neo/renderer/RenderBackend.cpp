@@ -5667,6 +5667,47 @@ idRenderBackend::DrawViewInternal
 */
 void idRenderBackend::DrawViewInternal( const viewDef_t* _viewDef, const int stereoEye )
 {
+	// Temporary, bounded diagnostics for the Underground door-light report.
+	// Read frame-owned draw lists only: live entity/light definitions may be
+	// changing on the front-end thread while the backend renders this view.
+	static int doorLogTime = -1;
+	static int doorLogSamples = 0;
+	const idVec3& diagnosticCamera = _viewDef->renderView.vieworg;
+	const int diagnosticTime = _viewDef->renderView.time[0];
+	if( _viewDef->renderView.viewID > 0 && !_viewDef->is2Dgui &&
+		diagnosticCamera.x > 250 && diagnosticCamera.x < 2200 &&
+		diagnosticCamera.y > -2200 && diagnosticCamera.y < -700 &&
+		doorLogSamples < 60 && ( doorLogTime < 0 || diagnosticTime < doorLogTime || diagnosticTime - doorLogTime >= 1000 ) )
+	{
+		doorLogTime = diagnosticTime;
+		++doorLogSamples;
+		common->Printf( "DOORTRACE sample=%d time=%d camera=%s skipShadows=%d facing=%d bias=%g\n",
+			doorLogSamples, diagnosticTime, diagnosticCamera.ToString(), r_skipShadows.GetBool(),
+			r_shadowMapOccluderFacing.GetInteger(), r_shadowMapRegularDepthBiasScale.GetFloat() );
+		for( const viewLight_t* light = _viewDef->viewLights; light; light = light->next )
+		{
+			if( ( light->globalLightOrigin - diagnosticCamera ).LengthSqr() > 900.0f * 900.0f ) continue;
+			int shadows = 0, doorShadows = 0, doorInteractions = 0;
+			for( const drawSurf_t* surf = light->globalShadows; surf; surf = surf->nextOnLight )
+			{
+				++shadows;
+				if( surf->material && strstr( surf->material->GetName(), "techdoor1/" ) )
+				{
+					++doorShadows;
+					common->Printf( "DOORTRACE caster light=%s material=%s indexes=%d coverage=%d casts=%d\n",
+						light->globalLightOrigin.ToString(), surf->material->GetName(), surf->numIndexes,
+						int( surf->material->Coverage() ), surf->material->SurfaceCastsShadow() );
+				}
+			}
+			const drawSurf_t* lists[2] = { light->globalInteractions, light->localInteractions };
+			for( int list = 0; list < 2; ++list )
+				for( const drawSurf_t* surf = lists[list]; surf; surf = surf->nextOnLight )
+					if( surf->material && strstr( surf->material->GetName(), "techdoor1/" ) ) ++doorInteractions;
+			common->Printf( "DOORTRACE light=%s shader=%s lod=%d fade=%g shadows=%d doorCasters=%d doorReceivers=%d removed=%d\n",
+				light->globalLightOrigin.ToString(), light->lightShader->GetName(), light->shadowLOD,
+				light->shadowFadeOut, shadows, doorShadows, doorInteractions, light->removeFromList );
+		}
+	}
 	//OPTICK_EVENT( "Backend_DrawViewInternal" );
 	//OPTICK_TAG( "stereoEye", stereoEye );
 

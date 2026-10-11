@@ -367,7 +367,19 @@ bool R_DLSSEvaluate( nvrhi::ICommandList* commands, const viewDef_t* view,
     constants.cameraMotionIncluded = sl::Boolean::eTrue;
     constants.motionVectors3D = sl::Boolean::eFalse;
     constants.reset = reset ? sl::Boolean::eTrue : sl::Boolean::eFalse;
-    if( !Check( p_slSetConstants( constants, *token, viewport ), "camera constants" ) ) return false;
+    const sl::Result constantsResult = p_slSetConstants( constants, *token, viewport );
+    if( constantsResult == sl::Result::eErrorDuplicatedConstants )
+    {
+        // Console/UI redraws can reuse a simulation frame token. Do not
+        // evaluate with another view's constants or permanently disable DLSS.
+        // Use the normal TAA fallback for this redraw and reset history when
+        // a fresh frame token arrives.
+        previousFrame = -1;
+        frameHasDLSS = false;
+        frameAllowsFG = false;
+        return false;
+    }
+    if( !Check( constantsResult, "camera constants" ) ) return false;
 
     // Establish known states before crossing from NVRHI to native DX12. Streamline
     // restores tagged resource states; clearState restores descriptor/pipeline tracking.

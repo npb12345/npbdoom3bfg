@@ -311,6 +311,7 @@ public:
 	idAngles                bodycamLagAngles = idAngles( 0, 0, 0 );
 	float                   bodycamMotionWeights[4] = { 1, 0, 0, 0 };
 	float                   bodycamAimBlend = 0.0f;
+	idVec3                  bodycamWeaponOffset = idVec3( 0, 0, 0 );
 	 idVec2                 bodycamVignetteOffset = idVec2( 0, 0 );
 
 

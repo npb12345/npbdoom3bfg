@@ -167,7 +167,7 @@ float2 BodycamLensUV( float2 uv )
 	float gradient = pow( saturate( 1.0 - length( centered ) / 0.75 ), 0.5 );
 	// Limit inward displacement: full strength collapses the center's scale
 	// toward zero and creates extreme magnification instead of a mild lens.
-	return uv - centered * gradient * 0.18;
+	return uv - centered * gradient * 0.26;
 }
 float4 BodycamSensorSample( float2 uv )
 {
