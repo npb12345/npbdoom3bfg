@@ -1,0 +1,66 @@
+// A readable, one-shot death burst; finishes before the AI's three-second cleanup.
+particle npb_lostsoul_death {
+    {
+        count 6
+        material textures/particles/boomboom2
+        time 0.65
+        cycles 1
+        bunching 0.12
+        distribution sphere 5 5 5
+        direction outward 0
+        orientation view
+        speed 24 to 8
+        size 15 to 47.5
+        aspect 1
+        rotation 30 to 70
+        randomDistribution 1
+        boundsExpansion 48
+        fadeIn 0.04
+        fadeOut 0.8
+        color 1 0.65 0.25 1
+        fadeColor 0.15 0.015 0 0
+        gravity world -8
+    }
+    {
+        count 22
+        material textures/particles/dot
+        time 1.1
+        cycles 1
+        bunching 0.08
+        distribution sphere 6 6 6
+        direction outward 0
+        orientation view
+        speed 75 to 18
+        size 1.4 to 0.2
+        aspect 1
+        randomDistribution 1
+        boundsExpansion 96
+        fadeIn 0
+        fadeOut 0.8
+        color 1 0.35 0.06 1
+        fadeColor 0.2 0.01 0 0
+        gravity world 35
+    }
+    {
+        count 7
+        material textures/particles/barrelpoof_sort
+        time 1.6
+        cycles 1
+        timeOffset 0.12
+        bunching 0.15
+        distribution sphere 8 8 8
+        direction outward 0
+        orientation view
+        speed 18 to 3
+        size 12 to 32
+        aspect 1
+        rotation 10 to 25
+        randomDistribution 1
+        boundsExpansion 64
+        fadeIn 0.15
+        fadeOut 0.8
+        color 0.28 0.25 0.22 0.65
+        fadeColor 0 0 0 0
+        gravity world -12
+    }
+}

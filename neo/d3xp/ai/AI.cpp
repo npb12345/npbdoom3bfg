@@ -3963,6 +3963,17 @@ void idAI::Killed( idEntity* inflictor, idEntity* attacker, int damage, const id
 		// lost soul is only case that does not use a ragdoll and has a model_death so get the death sound in here
 		StartSound( "snd_death", SND_CHANNEL_VOICE, 0, false, NULL );
 		renderEntity.shaderParms[ SHADERPARM_TIMEOFFSET ] = -MS2SEC( gameLocal.time );
+		if( idStr::Icmp( modelDeath, "lostsoul_pop.prt" ) == 0 )
+		{
+			// Select at death so Lost Souls already present in saves get the effect.
+			modelDeath = "npb_lostsoul_death.prt";
+			renderEntity.customSkin = NULL;
+			renderEntity.shaderParms[ SHADERPARM_PARTICLE_STOPTIME ] = 0.0f;
+			for( int color = SHADERPARM_RED; color <= SHADERPARM_ALPHA; color++ )
+			{
+				renderEntity.shaderParms[color] = 1.0f;
+			}
+		}
 		SetModel( modelDeath );
 		physicsObj.SetLinearVelocity( vec3_zero );
 		physicsObj.PutToRest();
