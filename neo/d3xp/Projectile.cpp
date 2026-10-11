@@ -1130,6 +1130,24 @@ void idProjectile::Explode( const trace_t& collision, idEntity* ignore )
 		}
 	}
 
+	// Give ballistic impacts distinct surface responses without changing explosions.
+	const char* bulletEffect = spawnArgs.GetString( "model_smokespark" );
+	const bool ballisticImpact = idStr::Icmp( bulletEffect, "bulletsmokeandspark.prt" ) == 0 ||
+		idStr::Icmp( bulletEffect, "sgsmokeandspark.prt" ) == 0 ||
+		idStr::Icmp( bulletEffect, "cgsmokeandspark.prt" ) == 0;
+	if( ballisticImpact && g_testParticle.GetInteger() != TEST_PARTICLE_IMPACT &&
+		!spawnArgs.GetString( "model_detonate" )[0] )
+	{
+		if( surfaceType == SURFTYPE_NONE || surfaceType == SURFTYPE_METAL || surfaceType == SURFTYPE_RICOCHET )
+		{
+			fxname = "npb_bullet_metal.prt";
+		}
+		else if( surfaceType == SURFTYPE_STONE || surfaceType == SURFTYPE_WOOD || surfaceType == SURFTYPE_CARDBOARD )
+		{
+			fxname = "npb_bullet_dust.prt";
+		}
+	}
+
 	// If the explosion is in liquid, spawn a particle splash
 	idVec3 testOrg = GetPhysics()->GetOrigin();
 	int testC = gameLocal.clip.Contents( testOrg, NULL, mat3_identity, CONTENTS_WATER, this );

@@ -6647,6 +6647,10 @@ void idAnimatedEntity::AddLocalDamageEffect( jointHandle_t jointNum, const idVec
 	{
 		bleed = def->dict.GetString( key );
 	}
+	if( idStr::Icmp( bleed, "burstysquirt.prt" ) == 0 )
+	{
+		bleed = "npb_bullet_blood.prt";
+	}
 	if( *bleed != '\0' )
 	{
 		de = new( TAG_ENTITY ) damageEffect_t;

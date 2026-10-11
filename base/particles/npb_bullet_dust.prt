@@ -1,0 +1,39 @@
+particle npb_bullet_dust {
+    {
+        count 6
+        material textures/particles/barrelpoof
+        time 0.8
+        cycles 1
+        bunching 0.1
+        distribution sphere 2 2 2
+        direction outward 0
+        orientation view
+        speed 18 to 3
+        size 3 to 11
+        rotation 20 to 0
+        fadeIn 0.05
+        fadeOut 0.8
+        color 0.32 0.29 0.25 0.85
+        fadeColor 0 0 0 0
+        gravity world -4
+    }
+    {
+        count 7
+        material textures/particles/barrelpoof
+        time 0.5
+        cycles 1
+        bunching 0.05
+        distribution sphere 2 2 2
+        direction outward 0
+        orientation view
+        speed 95 to 35
+        size 0.8 to 0.35
+        aspect 0.6
+        rotation 90 to 240
+        fadeIn 0
+        fadeOut 0.35
+        color 0.55 0.48 0.38 1
+        fadeColor 0.15 0.12 0.09 0
+        gravity world 180
+    }
+}
