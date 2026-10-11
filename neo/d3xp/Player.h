@@ -306,6 +306,7 @@ public:
 	float					weaponZoomBlend;	// smooth blend for zoomed weapon position
 	float                   weaponSteadyBlend = 0.0f;
 	int                     weaponSteadyTime = -1;
+	bool                    walkToggled = false;
 
 
 

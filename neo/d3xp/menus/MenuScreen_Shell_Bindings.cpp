@@ -46,7 +46,8 @@ static bindInfo_t keyboardBinds[] =
 	{ "#str_02105",	"_moveDown"								},	// CROUCH
 	{ "#str_02106",	"_left"									},	// TURN LEFT
 	{ "#str_02107",	"_right"								},	// TURN RIGHT
-	{ "#str_02109",	"_speed"								},	// SPRINT
+	{ "Sprint",	"_speed"								},	// SPRINT
+	{ "Toggle Walk", "_impulse24" },
 
 	{ "#str_02095",			""								},	// HEADING
 	{ "#str_02112",	"_attack"								},	// ATTACK

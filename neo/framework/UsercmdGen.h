@@ -71,6 +71,7 @@ const int IMPULSE_16			= 16;			// toggle flashlight on/off
 const int IMPULSE_18			= 18;			// center view
 const int IMPULSE_19			= 19;			// show PDA/SCORES
 const int IMPULSE_22			= 22;			// spectate
+const int IMPULSE_24            = 24;            // toggle walking
 const int IMPULSE_25			= 25;			// Envirosuit light
 const int IMPULSE_27			= 27;			// Chainsaw
 const int IMPULSE_28			= 28;			// quick 0

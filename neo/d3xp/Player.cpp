@@ -1767,6 +1767,7 @@ void idPlayer::Init()
 
 	weaponIdleTime = gameLocal.time;
 	weaponIdleLowered = false;
+	walkToggled = false;
 
 	oldButtons				= 0;
 	oldImpulseSequence		= 0;
@@ -2650,6 +2651,8 @@ idPlayer::Restore
 */
 void idPlayer::Restore( idRestoreGame* savefile )
 {
+	// Input toggles reset on loading; retain compatibility with existing saves.
+	walkToggled = false;
 	// Hold gestures are transient and must not survive loading a save.
 	reloadHoldStart = -1;
 	reloadHoldConsumed = false;
@@ -3850,7 +3853,8 @@ void idPlayer::UpdateConditions()
 		AI_STRAFE_RIGHT	= false;
 	}
 
-	AI_RUN			= ( usercmd.buttons & BUTTON_RUN ) && ( ( !pm_stamina.GetFloat() ) || ( stamina > pm_staminathreshold.GetFloat() ) );
+	AI_RUN = !walkToggled && !( usercmd.buttons & BUTTON_ZOOM ) &&
+		( common->IsMultiplayer() || !pm_stamina.GetFloat() || stamina > pm_staminathreshold.GetFloat() );
 	AI_DEAD			= ( health <= 0 );
 }
 
@@ -7931,6 +7935,9 @@ void idPlayer::PerformImpulse( int impulse )
 
 	switch( impulse )
 	{
+		case IMPULSE_24:
+			walkToggled = !walkToggled;
+			break;
 		case IMPULSE_13:
 		{
 			// Held bindings are handled in Weapon_Combat; retain console impulses.
@@ -8138,6 +8145,9 @@ void idPlayer::AdjustSpeed()
 {
 	float speed;
 	float rate;
+	const bool walking = walkToggled || ( usercmd.buttons & BUTTON_ZOOM );
+	const bool sprinting = !walking && ( usercmd.buttons & BUTTON_RUN );
+	const float walkSpeed = pm_walkspeed.GetFloat() * 0.66f;
 
 	if( spectating )
 	{
@@ -8149,17 +8159,18 @@ void idPlayer::AdjustSpeed()
 		speed = pm_noclipspeed.GetFloat();
 		bobFrac = 0.0f;
 	}
-	else if( !physicsObj.OnLadder() && ( usercmd.buttons & BUTTON_RUN ) && ( usercmd.forwardmove || usercmd.rightmove ) && !( usercmd.buttons & BUTTON_CROUCH ) )
+	else if( !walking && !physicsObj.OnLadder() && ( usercmd.forwardmove || usercmd.rightmove ) &&
+		!( usercmd.buttons & BUTTON_CROUCH ) && !physicsObj.IsCrouching() )
 	{
 		if( !common->IsMultiplayer() && !physicsObj.IsCrouching() && !PowerUpActive( ADRENALINE ) )
 		{
-			stamina -= MS2SEC( gameLocal.time - gameLocal.previousTime );
+			stamina -= MS2SEC( gameLocal.time - gameLocal.previousTime ) * ( sprinting ? 3.0f : 1.0f );
 		}
 		if( stamina < 0 )
 		{
 			stamina = 0;
 		}
-		if( ( !pm_stamina.GetFloat() ) || ( stamina > pm_staminathreshold.GetFloat() ) )
+		if( common->IsMultiplayer() || ( !pm_stamina.GetFloat() ) || ( stamina > pm_staminathreshold.GetFloat() ) )
 		{
 			bobFrac = 1.0f;
 		}
@@ -8171,7 +8182,11 @@ void idPlayer::AdjustSpeed()
 		{
 			bobFrac = stamina / pm_staminathreshold.GetFloat();
 		}
-		speed = pm_walkspeed.GetFloat() * ( 1.0f - bobFrac ) + pm_runspeed.GetFloat() * bobFrac;
+		const float targetSpeed = sprinting ? pm_runspeed.GetFloat() : pm_walkspeed.GetFloat();
+		speed = walkSpeed + ( targetSpeed - walkSpeed ) * bobFrac;
+		// Scale the run bob to the new walk/run/sprint speed range.
+		bobFrac *= idMath::ClampFloat( 0.0f, 1.0f,
+			( targetSpeed - walkSpeed ) / Max( 1.0f, pm_runspeed.GetFloat() - walkSpeed ) );
 	}
 	else
 	{
@@ -8188,7 +8203,7 @@ void idPlayer::AdjustSpeed()
 		{
 			stamina = pm_stamina.GetFloat();
 		}
-		speed = pm_walkspeed.GetFloat();
+		speed = walking ? walkSpeed : pm_walkspeed.GetFloat();
 		bobFrac = 0.0f;
 	}
 
@@ -9199,7 +9214,7 @@ void idPlayer::UpdateLaserSight()
 		idMat3 shotAxis;
 		weapon->GetProjectileLaunchOriginAndAxis( shotOrigin, shotAxis );
 		// Retain a small amount of animated muzzle movement around the shot path.
-		const float alignment = weaponSteadyBlend * 0.90f;
+		const float alignment = weaponSteadyBlend * 0.85f;
 		muzzleOrigin += ( shotOrigin - muzzleOrigin ) * alignment;
 		muzzleAxis[0] += ( shotAxis[0] - muzzleAxis[0] ) * alignment;
 		muzzleAxis[0].Normalize();
@@ -10948,7 +10963,7 @@ void idPlayer::CalculateViewWeaponPos(idVec3& origin, idMat3& axis)
 	const float steadyRate = steady ? 14.0f : 8.0f;
 	weaponSteadyBlend += ( steadyTarget - weaponSteadyBlend ) *
 		( 1.0f - idMath::Exp( -steadyRate * steadyDt ) );
-	const float swayScale = 1.0f - 0.85f * weaponSteadyBlend;
+	const float swayScale = 1.0f - 0.80f * weaponSteadyBlend;
 	const idVec3 steadyOrigin = viewOrigin + gunpos * viewAxis;
 	origin = steadyOrigin + ( origin - steadyOrigin ) * swayScale;
 	angles *= swayScale;
