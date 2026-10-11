@@ -1113,6 +1113,22 @@ void idProjectile::Explode( const trace_t& collision, idEntity* ignore )
 		fxname = spawnArgs.GetString( "model_detonate" );
 	}
 
+	if( g_testParticle.GetInteger() != TEST_PARTICLE_IMPACT && fxname != NULL )
+	{
+		if( idStr::Icmp( fxname, "plasmaimpact.prt" ) == 0 )
+		{
+			fxname = "npb_plasma_impact.prt";
+		}
+		else if( idStr::Icmp( fxname, "rocketExplosion.prt" ) == 0 )
+		{
+			fxname = "npb_rocketExplosion.prt";
+		}
+		else if( idStr::Icmp( fxname, "bfgExplosion.prt" ) == 0 )
+		{
+			fxname = "npb_bfgExplosion.prt";
+		}
+	}
+
 	int surfaceType = collision.c.material != NULL ? collision.c.material->GetSurfaceType() : SURFTYPE_METAL;
 	if( !( fxname != NULL && *fxname != '\0' ) )
 	{

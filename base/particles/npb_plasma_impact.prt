@@ -1,0 +1,36 @@
+particle npb_plasma_impact {
+    {
+        count 3
+        material textures/particles/boomboom3
+        time 0.28
+        cycles 1
+        bunching 0.05
+        distribution sphere 2 2 2
+        direction outward 0
+        orientation view
+        speed 8 to 0
+        size 5 to 23
+        fadeIn 0
+        fadeOut 0.85
+        color 0.35 0.65 1 1
+        fadeColor 0 0.05 0.2 0
+        gravity 0
+    }
+    {
+        count 8
+        material textures/particles/spark3
+        time 0.32
+        cycles 1
+        bunching 0.08
+        distribution sphere 2 2 2
+        direction outward 0
+        orientation aimed 0 0.02
+        speed 140 to 25
+        size 1.8 to 0.2
+        fadeIn 0
+        fadeOut 0.65
+        color 0.35 0.7 1 1
+        fadeColor 0 0.05 0.25 0
+        gravity world 75
+    }
+}
