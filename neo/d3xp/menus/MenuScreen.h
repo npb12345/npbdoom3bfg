@@ -1383,6 +1383,8 @@ public:
 			SYSTEM_FIELD_HDR_BLOOM,
 			SYSTEM_FIELD_HDR_BLOOM_RADIUS,
 			SYSTEM_FIELD_GRIMDARK,
+			SYSTEM_FIELD_CAMERA_BLUR_STRENGTH,
+			SYSTEM_FIELD_CAMERA_BLUR_QUALITY,
 			// RB begin
 			SYSTEM_FIELD_RENDERMODE,
 			SYSTEM_FIELD_AMBIENT_BRIGHTNESS,
@@ -1426,6 +1428,8 @@ public:
 		float originalHDRBloom;
 		float originalHDRBloomRadius;
 		float originalGrimdark;
+		float originalCameraBlurStrength;
+		int originalCameraBlurQuality;
 		int originalVsync;
 		float originalBrightness;
 		float originalVolume;

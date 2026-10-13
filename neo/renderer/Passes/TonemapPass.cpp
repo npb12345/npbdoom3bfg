@@ -36,6 +36,11 @@ idCVar r_bodycamVignetteY( "r_bodycamVignetteY", "0", CVAR_RENDERER | CVAR_FLOAT
 idCVar r_grimdark( "r_grimdark", "0.5", CVAR_RENDERER | CVAR_ARCHIVE | CVAR_FLOAT,
 	"Grimdark color grade strength; 0 disables", 0.0f, 1.0f );
 
+idCVar r_cameraMotionBlurStrength( "r_cameraMotionBlurStrength", "0", CVAR_RENDERER | CVAR_ARCHIVE | CVAR_FLOAT,
+	"Camera shutter strength; 0 disables, 1 is a 1/60 second exposure", 0.f, 1.f );
+idCVar r_cameraMotionBlurQuality( "r_cameraMotionBlurQuality", "2", CVAR_RENDERER | CVAR_ARCHIVE | CVAR_INTEGER,
+	"Camera motion blur quality: 0 low, 1 medium, 2 high, 3 ultra", 0, 3 );
+
 TonemapPass::TonemapPass()
 	: isLoaded( false )
 	, colorLut( nullptr )
@@ -61,6 +66,7 @@ void TonemapPass::Init( nvrhi::DeviceHandle _device, CommonRenderPasses* _common
 	histogramShader = histogramShaderInfo.cs;
 	exposureShader = exposureShaderInfo.cs;
 	tonemapShader = tonemapShaderInfo.ps;
+	fullscreenVertexShader = tonemapShaderInfo.vs;
 
 	// Determine if push constants can be used
 	size_t pcSize = sizeof( ToneMappingConstants );
@@ -215,6 +221,8 @@ void TonemapPass::Init( nvrhi::DeviceHandle _device, CommonRenderPasses* _common
 				nvrhi::BindingLayoutItem::Texture_SRV( 0 ),
 				nvrhi::BindingLayoutItem::TypedBuffer_SRV( 1 ),
 				nvrhi::BindingLayoutItem::Texture_SRV( 2 ),
+				nvrhi::BindingLayoutItem::Texture_SRV( 3 ),
+				nvrhi::BindingLayoutItem::Texture_SRV( 4 ),
 				nvrhi::BindingLayoutItem::Sampler( 0 )
 			};
 		}
@@ -226,6 +234,8 @@ void TonemapPass::Init( nvrhi::DeviceHandle _device, CommonRenderPasses* _common
 				nvrhi::BindingLayoutItem::Texture_SRV( 0 ),
 				nvrhi::BindingLayoutItem::TypedBuffer_SRV( 1 ),
 				nvrhi::BindingLayoutItem::Texture_SRV( 2 ),
+				nvrhi::BindingLayoutItem::Texture_SRV( 3 ),
+				nvrhi::BindingLayoutItem::Texture_SRV( 4 ),
 				nvrhi::BindingLayoutItem::Sampler( 0 )
 			};
 		}
@@ -277,6 +287,8 @@ void TonemapPass::Render(
 				nvrhi::BindingSetItem::Texture_SRV( 0, sourceTexture ),
 				nvrhi::BindingSetItem::TypedBuffer_SRV( 1, exposureBuffer ),
 				nvrhi::BindingSetItem::Texture_SRV( 2, colorLut->GetTextureHandle() ),
+				nvrhi::BindingSetItem::Texture_SRV( 3, R_GetMSAASamples() > 1 ? globalImages->blackImage->GetTextureHandle() : globalImages->currentDepthImage->GetTextureHandle() ),
+				nvrhi::BindingSetItem::Texture_SRV( 4, R_GetMSAASamples() > 1 ? globalImages->blackImage->GetTextureHandle() : globalImages->currentRenderHDRImage->GetTextureHandle() ),
 				nvrhi::BindingSetItem::Sampler( 0, commonPasses->m_LinearClampSampler )
 			};
 		}
@@ -288,6 +300,8 @@ void TonemapPass::Render(
 				nvrhi::BindingSetItem::Texture_SRV( 0, sourceTexture ),
 				nvrhi::BindingSetItem::TypedBuffer_SRV( 1, exposureBuffer ),
 				nvrhi::BindingSetItem::Texture_SRV( 2, colorLut->GetTextureHandle() ),
+				nvrhi::BindingSetItem::Texture_SRV( 3, R_GetMSAASamples() > 1 ? globalImages->blackImage->GetTextureHandle() : globalImages->currentDepthImage->GetTextureHandle() ),
+				nvrhi::BindingSetItem::Texture_SRV( 4, R_GetMSAASamples() > 1 ? globalImages->blackImage->GetTextureHandle() : globalImages->currentRenderHDRImage->GetTextureHandle() ),
 				nvrhi::BindingSetItem::Sampler( 0, commonPasses->m_LinearClampSampler )
 			};
 		}
@@ -298,7 +312,7 @@ void TonemapPass::Render(
 
 	{
 		nvrhi::GraphicsState state;
-		state.pipeline = renderPipeline;
+		state.pipeline = params.cameraBlurOnly ? cameraBlurPipeline : renderPipeline;
 		state.framebuffer = _targetFb;
 		state.bindings = { renderBindingSet };
 		nvrhi::Viewport viewport{ ( float )viewDef->viewport.x1,
@@ -312,6 +326,13 @@ void TonemapPass::Render(
 		bool enableColorLUT = params.enableColorLUT && colorLutSize > 0;
 
 		ToneMappingConstants toneMappingConstants = {};
+		if( params.cameraBlurOnly )
+		{
+			for( int row = 0; row < 4; ++row )
+				memcpy( toneMappingConstants.cameraReprojection[row].ToFloatPtr(), params.cameraReprojection[row], sizeof( idVec4 ) );
+			toneMappingConstants.cameraBlur = params.cameraBlur;
+			toneMappingConstants.cameraViewport = params.cameraViewport;
+		}
 		toneMappingConstants.bodycam = r_bodycamActive.GetBool() && viewDef->renderView.viewID > 0 && r_renderMode.GetInteger() == RENDERMODE_DOOM ? 1.f : 0.f;
 		toneMappingConstants.viewOrigin = idVec2i( viewDef->viewport.x1, viewDef->viewport.y1 );
 		toneMappingConstants.viewSize = idVec2i( viewDef->viewport.x2 - viewDef->viewport.x1 + 1, viewDef->viewport.y2 - viewDef->viewport.y1 + 1 );
@@ -352,6 +373,73 @@ void TonemapPass::SimpleRender( nvrhi::ICommandList* commandList, const ToneMapp
 	ResetHistogram( commandList );
 	AddFrameToHistogram( commandList, viewDef, sourceTexture );
 	ComputeExposure( commandList, params );
+
+#if 0 // Shelved: visual quality needs further work. Ignore saved strength settings.
+	const int now = viewDef->renderView.time[0];
+	const int frame = tr.GetFrameCount();
+	const int elapsed = now - previousCameraTime;
+	const idVec2i size( viewDef->viewport.x2 - viewDef->viewport.x1 + 1, viewDef->viewport.y2 - viewDef->viewport.y1 + 1 );
+	const bool eligible = !viewDef->isSubview && !viewDef->targetRender && viewDef->viewEntitys &&
+		viewDef->renderView.viewID > 0 && !( viewDef->renderView.rdflags & ( RDF_IRRADIANCE | RDF_NOAMBIENT ) ) && R_GetMSAASamples() <= 1;
+	const bool continuous = previousCameraTime >= 0 && elapsed > 0 && elapsed < 100 &&
+		frame == previousCameraFrame + 1 && size == previousCameraSize &&
+		( viewDef->renderView.vieworg - previousCameraOrigin ).LengthSqr() < 64.f * 64.f &&
+		viewDef->renderView.viewaxis[0] * previousCameraAxis[0] > 0.7f &&
+		idMath::Fabs( viewDef->renderView.fov_x - previousCameraFov ) < 0.1f;
+	if( eligible && continuous && r_cameraMotionBlurStrength.GetFloat() > 0.f &&
+		memcmp( &previousCameraMVP, &viewDef->worldSpace.unjitteredMVP, sizeof( idRenderMatrix ) ) != 0 )
+	{
+		const auto& desc = sourceTexture->getDesc();
+		if( !cameraBlurTexture || cameraBlurTexture->getDesc().width != desc.width || cameraBlurTexture->getDesc().height != desc.height )
+		{
+			// Drop cached references before replacing a resized intermediate.
+			renderBindingSets.Clear();
+			renderBindingHash.Clear();
+			nvrhi::TextureDesc blurDesc;
+			blurDesc.width = desc.width;
+			blurDesc.height = desc.height;
+			blurDesc.format = nvrhi::Format::RGBA16_FLOAT;
+			blurDesc.isRenderTarget = true;
+			blurDesc.initialState = nvrhi::ResourceStates::ShaderResource;
+			blurDesc.keepInitialState = true;
+			blurDesc.debugName = "CameraMotionBlurHDR";
+			cameraBlurTexture = device->createTexture( blurDesc );
+			cameraBlurFramebuffer = device->createFramebuffer( nvrhi::FramebufferDesc().addColorAttachment( cameraBlurTexture ) );
+			nvrhi::GraphicsPipelineDesc pipeline;
+			pipeline.primType = nvrhi::PrimitiveType::TriangleStrip;
+			pipeline.VS = fullscreenVertexShader;
+			pipeline.PS = tonemapShader;
+			pipeline.bindingLayouts = { renderBindingLayout };
+			pipeline.renderState.rasterState.setCullNone();
+			pipeline.renderState.depthStencilState.depthTestEnable = false;
+			pipeline.renderState.depthStencilState.stencilEnable = false;
+			cameraBlurPipeline = device->createGraphicsPipeline( pipeline, cameraBlurFramebuffer );
+		}
+		ToneMappingParameters blurParams = params;
+		blurParams.cameraBlurOnly = true;
+		idRenderMatrix inverseMVP;
+		idRenderMatrix::Inverse( viewDef->worldSpace.unjitteredMVP, inverseMVP );
+		idRenderMatrix::Multiply( previousCameraMVP, inverseMVP, blurParams.cameraReprojection );
+		const int samples[] = { 8, 12, 24, 40 };
+		blurParams.cameraBlur.Set( Min( 2.f, r_cameraMotionBlurStrength.GetFloat() * ( 1000.f / 60.f ) / elapsed ),
+			float( samples[idMath::ClampInt( 0, 3, r_cameraMotionBlurQuality.GetInteger() )] ),
+			viewDef->unjitteredProjectionRenderMatrix[2][2], viewDef->unjitteredProjectionRenderMatrix[2][3] );
+		commandList->beginMarker( "Camera Motion Blur" );
+		Render( commandList, blurParams, viewDef, sourceTexture, cameraBlurFramebuffer );
+		commandList->endMarker();
+		sourceTexture = cameraBlurTexture;
+	}
+	if( !viewDef->isSubview && !viewDef->targetRender )
+	{
+		previousCameraTime = eligible ? now : -1;
+		previousCameraFrame = frame;
+		previousCameraMVP = viewDef->worldSpace.unjitteredMVP;
+		previousCameraOrigin = viewDef->renderView.vieworg;
+		previousCameraAxis = viewDef->renderView.viewaxis;
+		previousCameraSize = size;
+		previousCameraFov = viewDef->renderView.fov_x;
+	}
+#endif
 	Render( commandList, params, viewDef, sourceTexture, _fbHandle );
 	commandList->endMarker();
 }

@@ -1,0 +1,12 @@
+// Local corridor experiment; alpha is fog distance in world units.
+// Never use this volume to hide a portal or change area visibility.
+fogs/npb_corridor_haze
+{
+	fogLight
+	noShadows
+	noPortalFog
+	{
+		map _fog
+		colored
+	}
+}

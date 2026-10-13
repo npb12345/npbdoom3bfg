@@ -38,6 +38,11 @@ struct ToneMappingParameters
 	float exposureBias = -0.5f;
 	float whitePoint = 3.f;
 	bool enableColorLUT = true;
+	// Internal HDR pre-pass; never fed back into temporal reconstruction.
+	bool cameraBlurOnly = false;
+	idRenderMatrix cameraReprojection;
+	idVec4 cameraBlur = idVec4( 0, 0, 0, 0 );
+	idVec4 cameraViewport = idVec4( 0, 0, 0, 0 );
 };
 
 class TonemapPass
@@ -96,6 +101,17 @@ private:
 	bool                            pcEnabledHistogram = false;	// true if push constants are used for Histogram
 	bool                            pcEnabledExposure = false;	// true if push constants are used for Exposure
 	bool                            pcEnabledTonemap = false;	// true if push constants are used for Tonemap
+	nvrhi::TextureHandle            cameraBlurTexture;
+	nvrhi::FramebufferHandle        cameraBlurFramebuffer;
+	nvrhi::GraphicsPipelineHandle   cameraBlurPipeline;
+	nvrhi::ShaderHandle             fullscreenVertexShader;
+	idRenderMatrix                 previousCameraMVP;
+	idVec3                         previousCameraOrigin = idVec3( 0, 0, 0 );
+	idMat3                         previousCameraAxis;
+	int                            previousCameraTime = -1;
+	int                            previousCameraFrame = -1;
+	idVec2i                        previousCameraSize = idVec2i( 0, 0 );
+	float                          previousCameraFov = 0.f;
 };
 
 #endif

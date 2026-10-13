@@ -53,6 +53,9 @@ idCVar r_hdrBloomThreshold( "r_hdrBloomThreshold", "1", CVAR_RENDERER | CVAR_ARC
 
 idCVar r_drawEyeColor( "r_drawEyeColor", "0", CVAR_RENDERER | CVAR_BOOL, "Draw a colored box, red = left eye, blue = right eye, grey = non-stereo" );
 idCVar r_motionBlur( "r_motionBlur", "0", CVAR_RENDERER | CVAR_INTEGER | CVAR_ARCHIVE, "1 - 5, log2 of the number of motion blur samples" );
+idCVar r_wetMaterialPreview( "r_wetMaterialPreview", "0", CVAR_RENDERER | CVAR_FLOAT,
+	"Wet sheen preview for three Underground metal materials: 0 original, 1 wet", 0.f, 1.f );
+static idVec4 wetPreviewFastSpecular( 1, 1, 1, 1 );
 idCVar r_forceZPassStencilShadows( "r_forceZPassStencilShadows", "0", CVAR_RENDERER | CVAR_BOOL, "force Z-pass rendering for performance testing" );
 idCVar r_useStencilShadowPreload( "r_useStencilShadowPreload", "0", CVAR_RENDERER | CVAR_BOOL, "use stencil shadow preload algorithm instead of Z-fail" );
 idCVar r_skipShaderPasses( "r_skipShaderPasses", "0", CVAR_RENDERER | CVAR_BOOL, "" );
@@ -1190,6 +1193,15 @@ void idRenderBackend::DrawSingleInteraction( drawInteraction_t* din, bool useFas
 	}
 
 	const textureUsage_t specUsage = din->specularImage->GetUsage();
+	// Specular modifier alpha is unused by the interaction shaders. Negative
+	// values opt only these legacy materials into the reversible sheen preview.
+	idVec4 previewSpecular = useFastPath ? wetPreviewFastSpecular : din->specularColor;
+	const char* previewMaterial = din->surf->material->GetName();
+	const bool previewSelected = !idStr::Icmp( previewMaterial, "textures/base_wall/lfwall16a" ) ||
+		!idStr::Icmp( previewMaterial, "textures/enpro/enwall12" ) ||
+		!idStr::Icmp( previewMaterial, "textures/base_floor/a_insettrim_d01a" );
+	previewSpecular.w = previewSelected ? -r_wetMaterialPreview.GetFloat() : 0.f;
+	SetFragmentParm( RENDERPARM_SPECULARMODIFIER, previewSpecular.ToFloatPtr() );
 
 	// RB begin
 	if( useIBL && din->surf->area != NULL && r_useLightGrid.GetBool() )
@@ -1642,6 +1654,7 @@ These are common for all fast path surfaces
 */
 static void RB_SetupForFastPathInteractions( const idVec4& diffuseColor, const idVec4& specularColor )
 {
+	wetPreviewFastSpecular = specularColor;
 	const idVec4 sMatrix( 1, 0, 0, 0 );
 	const idVec4 tMatrix( 0, 1, 0, 0 );
 
@@ -6128,6 +6141,8 @@ void idRenderBackend::DrawViewInternal( const viewDef_t* _viewDef, const int ste
 		renderLog.OpenBlock( "Render_ToneMapPass", colorBlue );
 
 		ToneMappingParameters parms;
+		parms.cameraViewport.Set( float( viewDef->viewport.x1 ), float( viewDef->viewport.y1 ),
+			float( viewDef->viewport.x2 - viewDef->viewport.x1 + 1 ), float( viewDef->viewport.y2 - viewDef->viewport.y1 + 1 ) );
 		viewDef_t outputView = *viewDef;
 		if( R_DLSSRequested() && !viewDef->isSubview )
 		{

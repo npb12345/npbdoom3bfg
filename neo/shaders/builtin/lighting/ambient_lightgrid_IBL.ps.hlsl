@@ -180,7 +180,7 @@ void main( PS_IN fragment, out PS_OUT result )
 	float3 specularColor;
 	float roughness;
 
-	PBRFromSpecmap( specMapSRGB.rgb, specularColor, roughness );
+	PBRFromSpecmap( specMapSRGB.rgb, specularColor, roughness, -pc.rpSpecularModifier.w );
 #else
 	const float roughness = EstimateLegacyRoughness( specMapSRGB.rgb );
 

@@ -918,6 +918,55 @@ void Cmd_Trigger_f( const idCmdArgs& args )
 Cmd_Spawn_f
 ===================
 */
+// Bounded art-direction preview. These named entities can be removed without
+// modifying the map's original lights, scripts, or the shelved door diagnostics.
+static void Cmd_HazePreview_f( const idCmdArgs& args )
+{
+	if( !gameLocal.GetLocalPlayer() || !gameLocal.CheatsOk( false ) ) return;
+	if( !strstr( gameLocal.GetMapName(), "mc_underground" ) )
+	{
+		gameLocal.Printf( "Load the Mars City Underground corridor save first.\n" );
+		return;
+	}
+	if( args.Argc() != 2 || ( idStr::Cmp( args.Argv( 1 ), "0" ) && idStr::Cmp( args.Argv( 1 ), "1" ) && idStr::Cmp( args.Argv( 1 ), "2" ) ) )
+	{
+		gameLocal.Printf( "npbHazePreview 0 = original, 1 = subtle haze, 2 = stronger haze\n" );
+		return;
+	}
+	const char* names[] = { "npb_preview_corridor_haze", "npb_preview_locker_light", "npb_preview_door_light" };
+	for( int i = 0; i < 3; ++i )
+	{
+		idEntity* entity = gameLocal.FindEntity( names[i] );
+		if( entity ) delete entity;
+	}
+	const int mode = atoi( args.Argv( 1 ) );
+	if( mode == 0 )
+	{
+		gameLocal.Printf( "Corridor lighting preview removed; original lights retained.\n" );
+		return;
+	}
+	const char* origins[] = { "552 -1464 66", "487 -1519 102", "704 -1440 82" };
+	const char* radii[] = { "144 88 58", "56 44 60", "44 64 82" };
+	const char* colors[] = { "0.16 0.18 0.22", "0.12 0.15 0.18", "0.14 0.16 0.19" };
+	for( int i = 0; i < 3; ++i )
+	{
+		idDict spawnArgs;
+		spawnArgs.Set( "classname", "light" );
+		spawnArgs.Set( "name", names[i] );
+		spawnArgs.Set( "origin", origins[i] );
+		spawnArgs.Set( "light_radius", radii[i] );
+		spawnArgs.Set( "_color", colors[i] );
+		spawnArgs.Set( "texture", i == 0 ? "fogs/npb_corridor_haze" : "lights/biground1" );
+		spawnArgs.Set( "noshadows", i == 0 ? "1" : "0" );
+		if( i == 0 ) spawnArgs.Set( "shaderParm3", mode == 1 ? "1800" : "1000" );
+		if( !gameLocal.SpawnEntityDef( spawnArgs ) )
+		{
+			gameLocal.Warning( "Could not spawn corridor preview %s", names[i] );
+		}
+	}
+	gameLocal.Printf( "Corridor preview %d active near the locker and Convergence Chamber 2 door. npbHazePreview 0 restores the original scene.\n", mode );
+}
+
 void Cmd_Spawn_f( const idCmdArgs& args )
 {
 	const char* key, *value;
@@ -2804,6 +2853,7 @@ void idGameLocal::InitConsoleCommands()
 	cmdSystem->AddCommand( "setviewpos",			Cmd_SetViewpos_f,			CMD_FL_GAME | CMD_FL_CHEAT,	"sets the current view position" );
 	cmdSystem->AddCommand( "teleport",				Cmd_Teleport_f,				CMD_FL_GAME | CMD_FL_CHEAT,	"teleports the player to an entity location", idGameLocal::ArgCompletion_EntityName );
 	cmdSystem->AddCommand( "trigger",				Cmd_Trigger_f,				CMD_FL_GAME | CMD_FL_CHEAT,	"triggers an entity", idGameLocal::ArgCompletion_EntityName );
+	cmdSystem->AddCommand( "npbHazePreview", Cmd_HazePreview_f, CMD_FL_GAME | CMD_FL_CHEAT, "Mars City Underground lighting preview: 0 off, 1 subtle, 2 stronger haze" );
 	cmdSystem->AddCommand( "spawn",					Cmd_Spawn_f,				CMD_FL_GAME | CMD_FL_CHEAT,	"spawns a game entity", idCmdSystem::ArgCompletion_Decl<DECL_ENTITYDEF> );
 	cmdSystem->AddCommand( "damage",				Cmd_Damage_f,				CMD_FL_GAME | CMD_FL_CHEAT,	"apply damage to an entity", idGameLocal::ArgCompletion_EntityName );
 	cmdSystem->AddCommand( "remove",				Cmd_Remove_f,				CMD_FL_GAME | CMD_FL_CHEAT,	"removes an entity", idGameLocal::ArgCompletion_EntityName );

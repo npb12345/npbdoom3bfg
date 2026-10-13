@@ -1770,6 +1770,7 @@ void idPlayer::Init()
 	weaponIdleLowered = false;
 	walkToggled = false;
 	 bodycamMotionTime = -1;
+	 hipCameraLagTime = -1;
 
 	oldButtons				= 0;
 	oldImpulseSequence		= 0;
@@ -2656,6 +2657,7 @@ void idPlayer::Restore( idRestoreGame* savefile )
 	// Input toggles reset on loading; retain compatibility with existing saves.
 	walkToggled = false;
 	 bodycamMotionTime = -1;
+	 hipCameraLagTime = -1;
 	// Hold gestures are transient and must not survive loading a save.
 	reloadHoldStart = -1;
 	reloadHoldConsumed = false;
@@ -11245,6 +11247,10 @@ void idPlayer::CalculateRenderView()
 	const bool bodycam = spawnArgs.GetBool( "npb_bodycam_unlocked" ) &&
 		spawnArgs.GetBool( "npb_bodycam_on" ) && health > 0 && !spectating &&
 		!gameLocal.inCinematic && !gameLocal.GetCamera() && !privateCameraView && !pm_thirdPerson.GetBool();
+	const bool hipCameraLag = !bodycam && health > 0 && !spectating &&
+		!gameLocal.inCinematic && !gameLocal.GetCamera() && !privateCameraView &&
+		!pm_thirdPerson.GetBool() && !pm_thirdPersonDeath.GetBool() && !g_stopTime.GetBool();
+	if( !hipCameraLag ) hipCameraLagTime = -1;
 	extern idCVar r_bodycamActive;
 	extern idCVar r_bodycamVignetteX;
 	extern idCVar r_bodycamVignetteY;
@@ -11383,17 +11389,75 @@ void idPlayer::CalculateRenderView()
 			}
 			for( int axis = 0; axis < 3; ++axis ) cameraAngles[axis] += idMath::AngleNormalize180( bodycamLagAngles[axis] - target[axis] ) * motionScale + shake[axis];
 			// Keep the mount fixed through ADS. Move the view weapon instead.
-			const idVec3 mountOffset( 0.0f, -1.0f, -3.0f );
+			const idVec3 mountOffset( 0.0f, -1.0f, -3.75f );
 			const idVec3 desiredOrigin = renderView->vieworg + ( offset + mountOffset ) * renderView->viewaxis;
 			trace_t cameraTrace;
 			gameLocal.clip.TraceBounds( cameraTrace, renderView->vieworg, desiredOrigin, idBounds( idVec3( -1,-1,-1 ), idVec3( 1,1,1 ) ), MASK_SOLID, this );
 			renderView->vieworg = cameraTrace.endpos;
-			bodycamWeaponOffset = ( mountOffset * renderView->viewaxis ) * cameraTrace.fraction * bodycamAimBlend;
+			// Larger firearms retain their tuned clearance from the low camera.
+			// Pistol and shotguns use their normal ADS offsets without being pulled down.
+			idVec3 weaponMountOffset = mountOffset;
+			idWeapon* bodycamWeapon = weapon.GetEntity();
+			const idDeclEntityDef* bodycamWeaponDef = bodycamWeapon ? bodycamWeapon->GetDeclEntityDef() : NULL;
+			if( bodycamWeaponDef )
+			{
+				const char* weaponName = bodycamWeaponDef->GetName();
+				if( !idStr::Icmp( weaponName, "weapon_pistol" ) || !idStr::Icmp( weaponName, "weapon_shotgun" ) ||
+					!idStr::Icmp( weaponName, "weapon_shotgun_double" ) || !idStr::Icmp( weaponName, "weapon_pistol_mp" ) ||
+					!idStr::Icmp( weaponName, "weapon_shotgun_mp" ) || !idStr::Icmp( weaponName, "weapon_shotgun_double_mp" ) )
+				{
+					weaponMountOffset.Zero();
+				}
+				else if( !idStr::Icmp( weaponName, "weapon_machinegun" ) || !idStr::Icmp( weaponName, "weapon_plasmagun" ) )
+				{
+					weaponMountOffset += idVec3( 0.0f, -1.25f, 1.5f );
+				}
+				else if( !idStr::Icmp( weaponName, "weapon_chaingun" ) || !idStr::Icmp( weaponName, "weapon_rocketlauncher" ) ||
+					!idStr::Icmp( weaponName, "weapon_bfg" ) )
+				{
+					weaponMountOffset += idVec3( 0.0f, -1.75f, 2.0f );
+				}
+			}
+			bodycamWeaponOffset = ( weaponMountOffset * renderView->viewaxis ) * cameraTrace.fraction * bodycamAimBlend;
+			// Per-weapon hip framing is independent of normal view and ADS offsets.
+			// Local axes: forward, left, up. Missing key preserves existing framing.
+			if( bodycamWeapon )
+			{
+				const idVec3 hipOffset = bodycamWeapon->spawnArgs.GetVector( "bodycamHipOffset", "0 0 0" );
+				bodycamWeaponOffset += ( hipOffset * renderView->viewaxis ) * ( 1.0f - bodycamAimBlend );
+			}
 			renderView->viewaxis = cameraAngles.ToMat3();
 		}
 		else
 		{
 			bodycamMotionTime = -1;
+		}
+		if( hipCameraLag )
+		{
+			// Match bodycam rotation lag at the ordinary eye position, without
+			// its lens, shake or mount offset. Aiming retains 15% of the delay.
+			const bool aiming = ( usercmd.buttons & BUTTON_ZOOM ) != 0;
+			const idAngles target = renderView->viewaxis.ToAngles();
+			const int elapsed = gameLocal.time - hipCameraLagTime;
+			if( hipCameraLagTime < 0 || elapsed < 0 || elapsed > 250 )
+			{
+				hipCameraLagAngles = target;
+				hipCameraAimBlend = aiming ? 1.0f : 0.0f;
+			}
+			const float dt = MS2SEC( idMath::ClampInt( 0, 50, elapsed ) );
+			hipCameraLagTime = gameLocal.time;
+			hipCameraAimBlend += ( ( aiming ? 1.0f : 0.0f ) - hipCameraAimBlend ) * ( 1.0f - idMath::Exp( -12.0f * dt ) );
+			for( float remaining = dt; remaining > 0.0f; )
+			{
+				const float step = Min( remaining, 1.0f / 60.0f );
+				for( int axis = 0; axis < 3; ++axis )
+					hipCameraLagAngles[axis] += idMath::AngleNormalize180( target[axis] - hipCameraLagAngles[axis] ) * Min( step * 18.0f, 1.0f );
+				remaining -= step;
+			}
+			idAngles cameraAngles = target;
+			for( int axis = 0; axis < 3; ++axis )
+				cameraAngles[axis] += idMath::AngleNormalize180( hipCameraLagAngles[axis] - target[axis] ) * ( 1.0f - 0.85f * hipCameraAimBlend );
+			renderView->viewaxis = cameraAngles.ToMat3();
 		}
 		// Bodycam keeps its wide lens while aiming, including zoom transitions.
 		// Aim input still drives weapon positioning and motion stabilization.

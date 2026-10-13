@@ -308,6 +308,9 @@ public:
 	int                     weaponSteadyTime = -1;
 	bool                    walkToggled = false;
 	int                     bodycamMotionTime = -1;
+	int                     hipCameraLagTime = -1;
+	idAngles                hipCameraLagAngles = idAngles( 0, 0, 0 );
+	float                   hipCameraAimBlend = 0.0f;
 	idAngles                bodycamLagAngles = idAngles( 0, 0, 0 );
 	float                   bodycamMotionWeights[4] = { 1, 0, 0, 0 };
 	float                   bodycamAimBlend = 0.0f;

@@ -49,4 +49,7 @@ struct ToneMappingConstants
 	float grainTime;
 	float bodycam;
 	idVec4 bodycamVignette;
+	idVec4 cameraReprojection[4];
+	idVec4 cameraBlur; // exposure fraction, sample budget, projection Z, projection W
+	idVec4 cameraViewport; // input origin and extent (DLSS may use a cropped viewport)
 };

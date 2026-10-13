@@ -121,7 +121,7 @@ float EstimateLegacyRoughness( float3 specMapSRGB )
 // Kennedith98 begin
 // takes a gamma-space specular texture
 // outputs F0 color and roughness for PBR
-void PBRFromSpecmap( float3 specMap, out float3 F0, out float roughness )
+void PBRFromSpecmap( float3 specMap, out float3 F0, out float roughness, float wetPreview = 0.0 )
 {
 	// desaturate specular
 	//float specLum = max( specMap.r, max( specMap.g, specMap.b ) );
@@ -158,6 +158,10 @@ void PBRFromSpecmap( float3 specMap, out float3 F0, out float roughness )
 
 	// RB: do another sqrt because PBR shader squares it
 	roughness = sqrt( roughness );
+	// Keep the original wear mask: dark, dirty regions remain comparatively dry.
+	float wet = saturate( wetPreview ) * smoothstep( 0.03, 0.3, specLum );
+	roughness = lerp( roughness, max( 0.12, roughness * 0.4 ), wet );
+	F0 = min( F0 * ( 1.0 + 0.35 * wet ), 1.0 );
 }
 // Kennedith98 end
 

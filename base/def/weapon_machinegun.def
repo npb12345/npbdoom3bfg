@@ -32,6 +32,8 @@ export fred {
 }
 
 entityDef weapon_machinegun {
+	// Bodycam hip fire only: forward, left, up. Negative Z lowers; fades out in ADS.
+	"bodycamHipOffset" "0 0 0"
 	"editor_color"				".3 .3 1"
 	"editor_mins"				"-16 -16 0"
 	"editor_maxs"				"16 16 32"

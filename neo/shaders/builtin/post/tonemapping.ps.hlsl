@@ -34,6 +34,8 @@ Texture2D t_Source : register(t0);
 Buffer<uint> t_Exposure : register(t1);
 
 Texture2D t_ColorLUT : register(t2);
+Texture2D<float> t_CameraDepth : register(t3);
+Texture2D<float4> t_CameraMask : register(t4);
 SamplerState s_ColorLUTSampler : register(s0);
 
 #if USE_PUSH_CONSTANTS
@@ -122,6 +124,66 @@ float4 BodycamSample( float2 lensUV )
 #endif
 }
 
+int2 CameraPixel( float2 uv )
+{
+	return int2( g_ToneMapping.cameraViewport.xy + clamp( uv * g_ToneMapping.cameraViewport.zw,
+		0.0, g_ToneMapping.cameraViewport.zw - 1.0 ) );
+}
+
+float CameraMask( float2 uv )
+{
+	int2 p = CameraPixel( uv );
+	int2 lo = int2( g_ToneMapping.cameraViewport.xy );
+	int2 hi = lo + int2( g_ToneMapping.cameraViewport.zw ) - 1;
+	// Expand the exclusion slightly to protect reconstructed weapon edges.
+	float mask = t_CameraMask.Load( int3( p, 0 ) ).a;
+	mask = min( mask, t_CameraMask.Load( int3( clamp( p + int2( 1, 0 ), lo, hi ), 0 ) ).a );
+	mask = min( mask, t_CameraMask.Load( int3( clamp( p - int2( 1, 0 ), lo, hi ), 0 ) ).a );
+	mask = min( mask, t_CameraMask.Load( int3( clamp( p + int2( 0, 1 ), lo, hi ), 0 ) ).a );
+	return min( mask, t_CameraMask.Load( int3( clamp( p - int2( 0, 1 ), lo, hi ), 0 ) ).a );
+}
+
+float CameraViewDepth( float depth )
+{
+	return abs( g_ToneMapping.cameraBlur.w ) / max( abs( depth + g_ToneMapping.cameraBlur.z ), 0.000001 );
+}
+
+float4 CameraBlur( float2 uv )
+{
+	float4 center = BodycamSample( uv );
+	if( CameraMask( uv ) < 0.99 ) return center;
+	float depth = t_CameraDepth.Load( int3( CameraPixel( uv ), 0 ) );
+	float4 clip = float4( uv * float2( 2, -2 ) + float2( -1, 1 ), depth, 1 );
+	float4 previous = float4( dot( g_ToneMapping.cameraReprojection[0], clip ),
+		dot( g_ToneMapping.cameraReprojection[1], clip ), dot( g_ToneMapping.cameraReprojection[2], clip ),
+		dot( g_ToneMapping.cameraReprojection[3], clip ) );
+	if( previous.w <= 0.00001 ) return center;
+	float2 previousUV = previous.xy / previous.w * float2( 0.5, -0.5 ) + 0.5;
+	float2 velocity = ( previousUV - uv ) * g_ToneMapping.cameraBlur.x;
+	float pixels = length( velocity * g_ToneMapping.viewSize );
+	if( pixels < 0.5 ) return center;
+	float maxPixels = min( 80.0, g_ToneMapping.viewSize.y * 0.04 );
+	velocity *= min( 1.0, maxPixels / pixels );
+	pixels = min( pixels, maxPixels );
+	int samples = min( int( g_ToneMapping.cameraBlur.y ), max( 4, int( ceil( pixels ) ) ) );
+	float centerZ = CameraViewDepth( depth );
+	float3 sum = center.rgb;
+	float weightSum = 1.0;
+	[loop] for( int i = 0; i < samples; ++i )
+	{
+		float t = ( i + 0.5 ) / samples - 0.5;
+		float2 sampleUV = uv + velocity * t;
+		if( any( sampleUV < 0 ) || any( sampleUV > 1 ) || CameraMask( sampleUV ) < 0.99 ) continue;
+		float sampleZ = CameraViewDepth( t_CameraDepth.Load( int3( CameraPixel( sampleUV ), 0 ) ) );
+		// Bilateral weights avoid dragging nearby walls and weapons over the background.
+		float weight = exp2( -abs( sampleZ - centerZ ) / max( centerZ * 0.05, 0.5 ) );
+		weight *= 1.0 - abs( t );
+		sum += BodycamSample( sampleUV ).rgb * weight;
+		weightSum += weight;
+	}
+	return float4( sum / weightSum, center.a );
+}
+
 float3 BodycamDisplayColor( float3 color )
 {
  color = ConvertToLDR( color );
@@ -189,6 +251,11 @@ void main(
 	in float2 uv : UV,
 	out float4 o_rgba : SV_Target )
 {
+	if( g_ToneMapping.cameraBlur.y > 0 )
+	{
+		o_rgba = CameraBlur( ( pos.xy - g_ToneMapping.viewOrigin ) / g_ToneMapping.viewSize );
+		return;
+	}
 #if SOURCE_ARRAY
 	float4 HdrColor = t_Source[uint3( pos.xy, g_ToneMapping.sourceSlice )];
 #else
