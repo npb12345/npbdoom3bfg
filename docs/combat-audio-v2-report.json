@@ -1,0 +1,112 @@
+[
+  {
+    "kind": "machinegun",
+    "source": "D:\\Games 2\\Doom I - II - III\\Doom III\\DOOM 3 BFG NPB\\base\\sound\\dane\\Machine_Gun_Shot_V2\\machgun_shot_1v2.wav",
+    "source_sha256": "0dee6c1bd0a7a94321f765065248192b12307abdae15901a37f9d7806c92138f",
+    "output": "base\\sound\\npb\\combat_v2\\machinegun_1.wav",
+    "sha256": "0949dd1e0154474bf380dd47ce46a28e2305c85cdcc1b439222ea08912b8697c",
+    "seconds": 0.9107936507936508,
+    "peak_db": -3,
+    "rms_db": -19.770434069959624,
+    "clipped_samples": 0
+  },
+  {
+    "kind": "machinegun",
+    "source": "D:\\Games 2\\Doom I - II - III\\Doom III\\DOOM 3 BFG NPB\\base\\sound\\dane\\Machine_Gun_Shot_V2\\machgun_shot_2v2.wav",
+    "source_sha256": "d654f6f88c1b11ce3d40c5d46d0d5932f596af96246992cfcbfc6adc4a5b54ed",
+    "output": "base\\sound\\npb\\combat_v2\\machinegun_2.wav",
+    "sha256": "568c0a1c20715d6f8356296276f4c125a7b840c4f29f0d08dee79d2625e7c361",
+    "seconds": 0.9601360544217687,
+    "peak_db": -3,
+    "rms_db": -20.467870184484592,
+    "clipped_samples": 0
+  },
+  {
+    "kind": "machinegun",
+    "source": "D:\\Games 2\\Doom I - II - III\\Doom III\\DOOM 3 BFG NPB\\base\\sound\\dane\\Machine_Gun_Shot_V2\\machgun_shot_3v2.wav",
+    "source_sha256": "841f8e259ce765c2a0b105a306ddf9c58159164dd109bc2ff6da5241ce14d5a8",
+    "output": "base\\sound\\npb\\combat_v2\\machinegun_3.wav",
+    "sha256": "f41e381e652db53c4025034f3217508f5190428c5a802f558589615e6d595491",
+    "seconds": 0.8373696145124716,
+    "peak_db": -3,
+    "rms_db": -19.859787222030945,
+    "clipped_samples": 0
+  },
+  {
+    "kind": "machinegun",
+    "source": "D:\\Games 2\\Doom I - II - III\\Doom III\\DOOM 3 BFG NPB\\base\\sound\\dane\\Machine_Gun_Shot_V2\\machgun_shot_4v2.wav",
+    "source_sha256": "3f5d836ec9fe86f4bf098ee56eecddd4b00c6460beacce6b32e42c003c386837",
+    "output": "base\\sound\\npb\\combat_v2\\machinegun_4.wav",
+    "sha256": "4cfcaa2e4ef370c6a09f2532d50cae0d0462a5b780c9af9a2a31397a496fbc8e",
+    "seconds": 0.9270294784580498,
+    "peak_db": -3,
+    "rms_db": -20.621443033626875,
+    "clipped_samples": 0
+  },
+  {
+    "kind": "machinegun",
+    "source": "D:\\Games 2\\Doom I - II - III\\Doom III\\DOOM 3 BFG NPB\\base\\sound\\dane\\Machine_Gun_Shot_V2\\machgun_shot_5v2.wav",
+    "source_sha256": "9e97451858789c5d0adf3bb3a731be6b389b21d76abb561bd9f5b068446d6e62",
+    "output": "base\\sound\\npb\\combat_v2\\machinegun_5.wav",
+    "sha256": "a5a0ac31c46deaf4cc725386adfd483cd3e3f464703a7f56d849207613afd46e",
+    "seconds": 0.9015419501133787,
+    "peak_db": -3,
+    "rms_db": -22.76322303513322,
+    "clipped_samples": 0
+  },
+  {
+    "kind": "shotgun",
+    "source": "build\\audio-source\\sg_fire_01.idwav",
+    "source_sha256": "705f9d9978370597a97d8a13f1a4136b296316bfb1a7118b2ffccff73f0c0152",
+    "output": "base\\sound\\npb\\combat_v2\\shotgun_1.wav",
+    "sha256": "68db1e32889686e24670ed7a2bcf5e0b0e57aa8ea6468c02c36a6e14f1ceaac1",
+    "seconds": 1.4016326530612244,
+    "peak_db": -3,
+    "rms_db": -12.269390432904375,
+    "clipped_samples": 0
+  },
+  {
+    "kind": "shotgun",
+    "source": "build\\audio-source\\sg_fire_01_a.idwav",
+    "source_sha256": "119519edc182f6c55dd23e4437e023f7982d0c53556dc8204ee1e5d75e2de980",
+    "output": "base\\sound\\npb\\combat_v2\\shotgun_2.wav",
+    "sha256": "c81c30ea047c9b94f7369308549b6ed8d5367070414d7f224296971481685715",
+    "seconds": 1.294512471655329,
+    "peak_db": -3,
+    "rms_db": -11.926791722408446,
+    "clipped_samples": 0
+  },
+  {
+    "kind": "shotgun",
+    "source": "build\\audio-source\\sg_fire_01_b.idwav",
+    "source_sha256": "f1ef68b970de162b8db7cf8ff3cab3811eef056e846db251f0a296c403576b6b",
+    "output": "base\\sound\\npb\\combat_v2\\shotgun_3.wav",
+    "sha256": "fb49729f0945dcaaf69a369c1b00e8b67f75f35db6d166ce3fd3564e9b1bda40",
+    "seconds": 1.508390022675737,
+    "peak_db": -3,
+    "rms_db": -12.32296658200964,
+    "clipped_samples": 0
+  },
+  {
+    "kind": "shotgun",
+    "source": "build\\audio-source\\sg_fire_01_c.idwav",
+    "source_sha256": "56a033917a939b0d0f30daab00d9cca95bae0e6b946acd0ed226b4f2dbd3b2ba",
+    "output": "base\\sound\\npb\\combat_v2\\shotgun_4.wav",
+    "sha256": "a31a81ddddc992a190363c9aa0058dd76925c51a206f02883de6f207c8211732",
+    "seconds": 1.507891156462585,
+    "peak_db": -3,
+    "rms_db": -13.178069818102419,
+    "clipped_samples": 0
+  },
+  {
+    "kind": "shotgun",
+    "source": "build\\audio-source\\sg_fire_01_d.idwav",
+    "source_sha256": "4b53b656953a586bf5190a2783542db2309fd0d86341662f07ff62d805c7f1b3",
+    "output": "base\\sound\\npb\\combat_v2\\shotgun_5.wav",
+    "sha256": "0c0930e71966083b8f0c91b1b8ee70f4cba36619b49302ca9b84dedb4afb32ed",
+    "seconds": 1.3901587301587301,
+    "peak_db": -3,
+    "rms_db": -12.703030707581364,
+    "clipped_samples": 0
+  }
+]
